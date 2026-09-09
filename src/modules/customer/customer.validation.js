@@ -1,6 +1,12 @@
-const { body } = require('express-validator');
+const {body, query, param} = require('express-validator');
+
+
+// =====================================================
+// CREATE CUSTOMER VALIDATION
+// =====================================================
 
 const createCustomerValidator = [
+
     body('customerType')
         .notEmpty()
         .withMessage('Customer type is required')
@@ -69,6 +75,66 @@ const createCustomerValidator = [
         .withMessage('Shipping address is required')
 ];
 
+
+// =====================================================
+// CUSTOMER LIST VALIDATION
+// =====================================================
+
+const customerListValidator = [
+
+    query('page')
+        .optional()
+        .isInt({ min: 1 })
+        .withMessage('Page must be a positive integer'),
+
+    query('limit')
+        .optional()
+        .isInt({ min: 1, max: 100 })
+        .withMessage('Limit must be between 1 and 100'),
+
+    query('search')
+        .optional()
+        .trim(),
+
+    query('status')
+        .optional()
+        .isIn(['ACTIVE', 'INACTIVE'])
+        .withMessage('Invalid customer status'),
+
+    query('sortBy')
+        .optional()
+        .isIn([
+            'displayName',
+            'gstin',
+            'email',
+            'phone',
+            'status',
+            'createdAt'
+        ])
+        .withMessage('Invalid sort field'),
+
+    query('sortOrder')
+        .optional()
+        .isIn(['asc', 'desc'])
+        .withMessage('Sort order must be asc or desc')
+];
+
+// =====================================================
+// CUSTOMER DETAILS VALIDATION
+// =====================================================
+
+const customerDetailsValidator = [
+
+    param('customerId')
+        .notEmpty()
+        .withMessage('Customer ID is required')
+        .isInt({ min: 1 })
+        .withMessage('Customer ID must be a positive integer')
+];
+
+
 module.exports = {
-    createCustomerValidator
+    createCustomerValidator,
+    customerListValidator,
+    customerDetailsValidator
 };

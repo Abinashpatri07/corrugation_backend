@@ -3,6 +3,11 @@ const pool = require('../../config/database');
 const repository = require('./customer.repository');
 const { generateCustomerCode } = require('./customer-code');
 
+
+// =====================================================
+// CREATE CUSTOMER
+// =====================================================
+
 async function createCustomer(data) {
 
     const client = await pool.connect();
@@ -11,22 +16,17 @@ async function createCustomer(data) {
 
         await client.query('BEGIN');
 
-        // ----------------------------------
-        // 1. Check duplicate PAN
-        // ----------------------------------
-
         const existingPan =
-            await repository.findCustomerByPan(client, data.pan);
+            await repository.findCustomerByPan(
+                client,
+                data.pan
+            );
 
         if (existingPan) {
             throw new Error(
                 `Customer already exists with PAN ${data.pan}`
             );
         }
-
-        // ----------------------------------
-        // 2. Check duplicate GSTIN
-        // ----------------------------------
 
         if (data.gstin) {
 
@@ -43,16 +43,8 @@ async function createCustomer(data) {
             }
         }
 
-        // ----------------------------------
-        // 3. Generate customer code
-        // ----------------------------------
-
         const customerCode =
             await generateCustomerCode(client);
-
-        // ----------------------------------
-        // 4. Create customer
-        // ----------------------------------
 
         const customer =
             await repository.createCustomer(
@@ -63,10 +55,6 @@ async function createCustomer(data) {
                 }
             );
 
-        // ----------------------------------
-        // 5. Create billing address
-        // ----------------------------------
-
         await repository.createAddress(
             client,
             customer.customer_id,
@@ -75,10 +63,6 @@ async function createCustomer(data) {
                 addressType: 'BILLING'
             }
         );
-
-        // ----------------------------------
-        // 6. Create shipping address
-        // ----------------------------------
 
         await repository.createAddress(
             client,
@@ -89,11 +73,10 @@ async function createCustomer(data) {
             }
         );
 
-        // ----------------------------------
-        // 7. Create contacts
-        // ----------------------------------
-
-        if (data.contacts && data.contacts.length > 0) {
+        if (
+            data.contacts &&
+            data.contacts.length > 0
+        ) {
 
             for (const contact of data.contacts) {
 
@@ -105,12 +88,10 @@ async function createCustomer(data) {
             }
         }
 
-        // ----------------------------------
-        // 8. Create bank accounts
-        // ----------------------------------
-
-        if (data.bankDetails &&
-            data.bankDetails.length > 0) {
+        if (
+            data.bankDetails &&
+            data.bankDetails.length > 0
+        ) {
 
             for (const bank of data.bankDetails) {
 
@@ -121,10 +102,6 @@ async function createCustomer(data) {
                 );
             }
         }
-
-        // ----------------------------------
-        // 9. Commit transaction
-        // ----------------------------------
 
         await client.query('COMMIT');
 
@@ -145,6 +122,244 @@ async function createCustomer(data) {
     }
 }
 
+
+// =====================================================
+// GET CUSTOMER LIST
+// =====================================================
+
+async function getCustomers(params) {
+
+    const page =
+        Number(params.page) || 1;
+
+    const limit =
+        Number(params.limit) || 10;
+
+    const offset =
+        (page - 1) * limit;
+
+    const search =
+        params.search || '';
+
+    const status =
+        params.status || '';
+
+    const sortBy =
+        params.sortBy || 'createdAt';
+
+    const sortOrder =
+        params.sortOrder || 'desc';
+
+
+    const result =
+        await repository.getCustomers({
+            page,
+            limit,
+            offset,
+            search,
+            status,
+            sortBy,
+            sortOrder
+        });
+
+
+    return {
+        data: result.rows,
+
+        pagination: {
+            page,
+            limit,
+            totalRecords: result.totalRecords,
+            totalPages:
+                Math.ceil(result.totalRecords / limit)
+        }
+    };
+}
+
+// =====================================================
+// GET CUSTOMER DETAILS
+// =====================================================
+
+async function getCustomerDetails(customerId) {
+
+    const customer =
+        await repository.getCustomerById(customerId);
+
+    if (!customer) {
+
+        const error =
+            new Error('Customer not found');
+
+        error.statusCode = 404;
+
+        throw error;
+    }
+
+
+    const [
+        addresses,
+        contacts,
+        banks,
+        summary
+    ] = await Promise.all([
+
+        repository.getCustomerAddresses(customerId),
+
+        repository.getCustomerContacts(customerId),
+
+        repository.getCustomerBanks(customerId),
+
+        repository.getCustomerSummary(customerId)
+
+    ]);
+
+
+    const billingAddress =
+        addresses.find(
+            address =>
+                address.addressType === 'BILLING'
+        ) || null;
+
+
+    const shippingAddress =
+        addresses.find(
+            address =>
+                address.addressType === 'SHIPPING'
+        ) || null;
+
+
+    return {
+
+        customer,
+
+        summary,
+
+        addresses: {
+            billing: billingAddress,
+            shipping: shippingAddress
+        },
+
+        contacts,
+
+        banks
+
+    };
+}
+// =====================================================
+// GET CUSTOMER BOX SPECIFICATIONS
+// =====================================================
+
+async function getCustomerBoxSpecifications(customerId) {
+
+    const customer =
+        await repository.getCustomerById(customerId);
+
+    if (!customer) {
+
+        const error =
+            new Error('Customer not found');
+
+        error.statusCode = 404;
+
+        throw error;
+    }
+
+    return await repository.getCustomerBoxSpecifications(
+        customerId
+    );
+}
+// =====================================================
+// GET CUSTOMER ORDER HISTORY
+// =====================================================
+
+async function getCustomerOrderHistory(
+    customerId,
+    params
+) {
+
+    const page =
+        Number(params.page) || 1;
+
+    const limit =
+        Number(params.limit) || 10;
+
+    const offset =
+        (page - 1) * limit;
+
+
+    const result =
+        await repository.getCustomerOrderHistory({
+            customerId,
+            page,
+            limit,
+            offset
+        });
+
+
+    return {
+
+        data: result.rows,
+
+        pagination: {
+            page,
+            limit,
+
+            totalRecords:
+                result.totalRecords,
+
+            totalPages:
+                Math.ceil(
+                    result.totalRecords / limit
+                )
+        }
+    };
+}
+// =====================================================
+// GET CUSTOMER INVOICE
+// =====================================================
+
+async function getCustomerInvoice(customerId) {
+
+    const customer =
+        await repository.getCustomerById(customerId);
+
+    if (!customer) {
+
+        const error =
+            new Error('Customer not found');
+
+        error.statusCode = 404;
+
+        throw error;
+    }
+
+
+    const [
+        commercialTerms,
+        paymentActivity
+    ] = await Promise.all([
+
+        repository.getCustomerCommercialTerms(
+            customerId
+        ),
+
+        repository.getCustomerPaymentActivity(
+            customerId
+        )
+
+    ]);
+
+
+    return {
+        commercialTerms,
+        paymentActivity
+    };
+}
 module.exports = {
-    createCustomer
+    createCustomer,
+    getCustomers,
+    getCustomerDetails,
+    getCustomerBoxSpecifications,
+    getCustomerOrderHistory,
+    getCustomerInvoice
 };
