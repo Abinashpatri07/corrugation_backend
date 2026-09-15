@@ -1,149 +1,490 @@
 const pool = require('../../config/database');
-const repository = require('./vendor.repository');
-const { generateVendorCode } = require('./vendor-code');
+
+const repository =
+    require('./vendor.repository');
+
+const {
+    generateVendorCode
+} = require('./vendor-code');
+
+
+// =====================================================
+// CREATE VENDOR
+// =====================================================
+//
+// Creates the Vendor master and all child records in a
+// single database transaction.
+//
+// If any child insert fails, the complete Vendor creation
+// is rolled back so that partial Vendor data is not left in
+// the database.
+// =====================================================
 
 async function createVendor(data) {
-  const client = await pool.connect();
 
-  try {
-    await client.query('BEGIN');
+    const client =
+        await pool.connect();
 
-    if (await repository.findVendorByPan(client, data.pan)) {
-      const error = new Error('Vendor with this PAN already exists');
-      error.status = 409;
-      throw error;
+    try {
+
+        await client.query('BEGIN');
+
+
+        // -------------------------------------------------
+        // Duplicate PAN check
+        // -------------------------------------------------
+
+        const existingPan =
+            await repository.findVendorByPan(
+                client,
+                data.pan
+            );
+
+        if (existingPan) {
+
+            const error =
+                new Error(
+                    `Vendor already exists with PAN ${data.pan}`
+                );
+
+            error.statusCode = 409;
+
+            throw error;
+        }
+
+
+        // -------------------------------------------------
+        // Duplicate GSTIN check
+        // -------------------------------------------------
+
+        if (data.gstin) {
+
+            const existingGstin =
+                await repository.findVendorByGstin(
+                    client,
+                    data.gstin
+                );
+
+            if (existingGstin) {
+
+                const error =
+                    new Error(
+                        `Vendor already exists with GSTIN ${data.gstin}`
+                    );
+
+                error.statusCode = 409;
+
+                throw error;
+            }
+        }
+
+
+        // -------------------------------------------------
+        // Generate Vendor code
+        // -------------------------------------------------
+
+        const vendorCode =
+            await generateVendorCode(client);
+
+
+        // -------------------------------------------------
+        // Create Vendor master record
+        // -------------------------------------------------
+
+        const vendor =
+            await repository.createVendor(
+                client,
+                {
+                    ...data,
+                    vendorCode
+                }
+            );
+
+
+        // -------------------------------------------------
+        // Billing address
+        // -------------------------------------------------
+
+        if (data.billingAddress) {
+
+            await repository.createAddress(
+                client,
+                vendor.vendorId,
+                {
+                    ...data.billingAddress,
+                    addressType: 'Billing'
+                }
+            );
+        }
+
+
+        // -------------------------------------------------
+        // Shipping address
+        // -------------------------------------------------
+
+        if (data.shippingAddress) {
+
+            await repository.createAddress(
+                client,
+                vendor.vendorId,
+                {
+                    ...data.shippingAddress,
+                    addressType: 'Shipping'
+                }
+            );
+        }
+
+
+        // -------------------------------------------------
+        // Contact directory
+        // -------------------------------------------------
+
+        if (
+            data.contacts &&
+            data.contacts.length > 0
+        ) {
+
+            for (const contact of data.contacts) {
+
+                await repository.createContact(
+                    client,
+                    vendor.vendorId,
+                    contact
+                );
+            }
+        }
+
+
+        // -------------------------------------------------
+        // Bank details
+        // -------------------------------------------------
+
+        if (
+            data.bankDetails &&
+            data.bankDetails.length > 0
+        ) {
+
+            for (const bank of data.bankDetails) {
+
+                await repository.createBankDetails(
+                    client,
+                    vendor.vendorId,
+                    bank
+                );
+            }
+        }
+
+
+        // -------------------------------------------------
+        // Commit transaction
+        // -------------------------------------------------
+
+        await client.query('COMMIT');
+
+
+        return {
+            vendorId: vendor.vendorId,
+            vendorCode: vendor.vendorCode
+        };
+
+    } catch (error) {
+
+        await client.query('ROLLBACK');
+
+        throw error;
+
+    } finally {
+
+        client.release();
     }
-
-    if (data.gstin && await repository.findVendorByGstin(client, data.gstin)) {
-      const error = new Error('Vendor with this GSTIN already exists');
-      error.status = 409;
-      throw error;
-    }
-
-    const vendor = await repository.createVendor(client, {
-      ...data,
-      vendor_code: await generateVendorCode(client),
-    });
-
-    for (const item of data.addresses || []) await repository.createAddress(client, vendor.vendor_id, item);
-    for (const item of data.contacts || []) await repository.createContact(client, vendor.vendor_id, item);
-    for (const item of data.banks || []) await repository.createBank(client, vendor.vendor_id, item);
-    for (const item of data.documents || []) await repository.createDocument(client, vendor.vendor_id, item);
-    for (const item of data.reel_specifications || []) await repository.createReelSpecification(client, vendor.vendor_id, item);
-
-    await client.query('COMMIT');
-    return getVendorById(vendor.vendor_id);
-  } catch (error) {
-    await client.query('ROLLBACK');
-    throw error;
-  } finally {
-    client.release();
-  }
 }
 
-async function getVendorById(id) {
-  const client = await pool.connect();
-  try {
-    const vendor = await repository.findVendorById(client, id);
-    if (!vendor) return null;
 
-    const [addresses, contacts, banks, documents, reelSpecifications, orderHistory, summary] =
-      await Promise.all([
-        repository.getVendorAddresses(client, id),
-        repository.getVendorContacts(client, id),
-        repository.getVendorBanks(client, id),
-        repository.getVendorDocuments(client, id),
-        repository.getReelSpecifications(client, id),
-        repository.getOrderHistory(client, id),
-        repository.getVendorSummary(client, id),
-      ]);
+// =====================================================
+// GET VENDOR LIST
+// =====================================================
+
+async function getVendors(params = {}) {
+
+    const page =
+        Number(params.page) || 1;
+
+    const limit =
+        Number(params.limit) || 10;
+
+    const offset =
+        (page - 1) * limit;
+
+    const search =
+        params.search || '';
+
+    const status =
+        params.status || '';
+
+    const sortBy =
+        params.sortBy || 'createdAt';
+
+    const sortOrder =
+        params.sortOrder || 'desc';
+
+
+    const result =
+        await repository.getVendors({
+            page,
+            limit,
+            offset,
+            search,
+            status,
+            sortBy,
+            sortOrder
+        });
+
 
     return {
-      ...vendor,
-      addresses,
-      contacts,
-      banks,
-      documents,
-      reel_specifications: reelSpecifications,
-      order_history: orderHistory,
-      summary,
+        data: result.rows,
+
+        pagination: {
+            page,
+            limit,
+            totalRecords:
+                result.totalRecords,
+            totalPages:
+                Math.ceil(
+                    result.totalRecords / limit
+                )
+        }
     };
-  } finally {
-    client.release();
-  }
 }
 
-async function listVendors(params) {
-  const client = await pool.connect();
-  try {
-    return repository.listVendors(client, params);
-  } finally {
-    client.release();
-  }
-}
 
-async function updateVendor(id, data) {
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
+// =====================================================
+// GET VENDOR DETAILS
+// =====================================================
 
-    if (data.pan && await repository.findVendorByPan(client, data.pan, id)) {
-      const error = new Error('Vendor with this PAN already exists');
-      error.status = 409;
-      throw error;
-    }
+async function getVendorDetails(vendorId) {
 
-    if (data.gstin && await repository.findVendorByGstin(client, data.gstin, id)) {
-      const error = new Error('Vendor with this GSTIN already exists');
-      error.status = 409;
-      throw error;
-    }
+    const vendor =
+        await repository.getVendorById(
+            vendorId
+        );
 
-    const vendor = await repository.updateVendor(client, id, data);
     if (!vendor) {
-      const error = new Error('Vendor not found');
-      error.status = 404;
-      throw error;
+
+        const error =
+            new Error('Vendor not found');
+
+        error.statusCode = 404;
+
+        throw error;
     }
 
-    await client.query('COMMIT');
-    return getVendorById(id);
-  } catch (error) {
-    await client.query('ROLLBACK');
-    throw error;
-  } finally {
-    client.release();
-  }
+
+    const [
+        addresses,
+        contacts,
+        banks,
+        documents,
+        summary
+    ] = await Promise.all([
+
+        repository.getVendorAddresses(
+            vendorId
+        ),
+
+        repository.getVendorContacts(
+            vendorId
+        ),
+
+        repository.getVendorBanks(
+            vendorId
+        ),
+
+        repository.getVendorDocuments(
+            vendorId
+        ),
+
+        repository.getVendorSummary(
+            vendorId
+        )
+    ]);
+
+
+    const billingAddress =
+        addresses.find(
+            address =>
+                address.addressType === 'Billing'
+        ) || null;
+
+
+    const shippingAddress =
+        addresses.find(
+            address =>
+                address.addressType === 'Shipping'
+        ) || null;
+
+
+    return {
+
+        vendor,
+
+        summary,
+
+        addresses: {
+            billing: billingAddress,
+            shipping: shippingAddress
+        },
+
+        contacts,
+
+        banks,
+
+        documents
+    };
 }
 
-async function getReelSpecifications(id, search) {
-  const client = await pool.connect();
-  try {
-    return repository.getReelSpecifications(client, id, search);
-  } finally {
-    client.release();
-  }
+
+// =====================================================
+// GET VENDOR REEL SPECIFICATIONS
+// =====================================================
+
+async function getVendorReelSpecifications(
+    vendorId,
+    params = {}
+) {
+
+    const vendor =
+        await repository.getVendorById(
+            vendorId
+        );
+
+    if (!vendor) {
+
+        const error =
+            new Error('Vendor not found');
+
+        error.statusCode = 404;
+
+        throw error;
+    }
+
+
+    return repository.getVendorReelSpecifications(
+        vendorId,
+        params.search || ''
+    );
 }
 
-async function getOrderHistory(id, params) {
-  const client = await pool.connect();
-  try {
-    return repository.getOrderHistory(client, id, params);
-  } finally {
-    client.release();
-  }
+
+// =====================================================
+// GET VENDOR PURCHASE ORDER HISTORY
+// =====================================================
+
+async function getVendorPurchaseOrderHistory(
+    vendorId,
+    params = {}
+) {
+
+    const vendor =
+        await repository.getVendorById(
+            vendorId
+        );
+
+    if (!vendor) {
+
+        const error =
+            new Error('Vendor not found');
+
+        error.statusCode = 404;
+
+        throw error;
+    }
+
+
+    const page =
+        Number(params.page) || 1;
+
+    const limit =
+        Number(params.limit) || 10;
+
+    const offset =
+        (page - 1) * limit;
+
+
+    const result =
+        await repository.getVendorPurchaseOrderHistory({
+            vendorId,
+            page,
+            limit,
+            offset,
+            search: params.search || '',
+            startDate: params.startDate || null,
+            endDate: params.endDate || null
+        });
+
+
+    return {
+        data: result.rows,
+
+        pagination: {
+            page,
+            limit,
+            totalRecords:
+                result.totalRecords,
+            totalPages:
+                Math.ceil(
+                    result.totalRecords / limit
+                )
+        }
+    };
 }
 
-async function deleteVendor(id) {
-  const client = await pool.connect();
-  try {
-    return repository.deleteVendor(client, id);
-  } finally {
-    client.release();
-  }
+
+// =====================================================
+// GET VENDOR COMMERCIAL TERMS
+// =====================================================
+//
+// Unlike Customer, Vendor commercial terms are stored
+// directly on the vendor table in the current schema:
+//
+//     currency
+//     opening_balance
+//     accounts_payable
+//     payment_terms
+//     advance_required
+//
+// Outstanding payable is additionally calculated from
+// pending Bills.
+// =====================================================
+
+async function getVendorCommercialTerms(vendorId) {
+
+    const vendor =
+        await repository.getVendorById(
+            vendorId
+        );
+
+    if (!vendor) {
+
+        const error =
+            new Error('Vendor not found');
+
+        error.statusCode = 404;
+
+        throw error;
+    }
+
+
+    return repository.getVendorCommercialTerms(
+        vendorId
+    );
 }
+
 
 module.exports = {
-  createVendor, getVendorById, listVendors, updateVendor,
-  getReelSpecifications, getOrderHistory, deleteVendor,
+    createVendor,
+    getVendors,
+    getVendorDetails,
+    getVendorReelSpecifications,
+    getVendorPurchaseOrderHistory,
+    getVendorCommercialTerms
 };

@@ -1,16 +1,89 @@
 const express = require('express');
-const controller = require('./vendor.controller');
-const { validate, createVendorSchema, updateVendorSchema } = require('./vendor.validation');
 
 const router = express.Router();
 
-router.post('/', validate(createVendorSchema), controller.createVendor);
-router.get('/', controller.listVendors);
-router.get('/:id', controller.getVendor);
-router.put('/:id', validate(updateVendorSchema), controller.updateVendor);
-router.delete('/:id', controller.deleteVendor);
+const controller = require('./vendor.controller');
 
-router.get('/:id/reel-specifications', controller.reelSpecifications);
-router.get('/:id/order-history', controller.orderHistory);
+const {
+    createVendorValidator,
+    vendorListValidator,
+    vendorDetailsValidator
+} = require('./vendor.validation');
+
+const validateRequest =
+    require('../../middleware/validation.middleware');
+
+
+// =====================================================
+// CREATE VENDOR
+// =====================================================
+
+router.post(
+    '/',
+    createVendorValidator,
+    validateRequest,
+    controller.createVendor
+);
+
+
+// =====================================================
+// VENDOR LIST
+// =====================================================
+
+router.get(
+    '/',
+    vendorListValidator,
+    validateRequest,
+    controller.getVendors
+);
+
+
+// =====================================================
+// VENDOR DETAILS / OVERVIEW
+// =====================================================
+
+router.get(
+    '/:vendorId',
+    vendorDetailsValidator,
+    validateRequest,
+    controller.getVendorDetails
+);
+
+
+// =====================================================
+// VENDOR REEL SPECIFICATIONS
+// =====================================================
+
+router.get(
+    '/:vendorId/reel-specifications',
+    vendorDetailsValidator,
+    validateRequest,
+    controller.getVendorReelSpecifications
+);
+
+
+// =====================================================
+// VENDOR PURCHASE ORDER HISTORY
+// =====================================================
+
+router.get(
+    '/:vendorId/order-history',
+    vendorDetailsValidator,
+    validateRequest,
+    controller.getVendorPurchaseOrderHistory
+);
+
+
+// =====================================================
+// VENDOR COMMERCIAL TERMS
+// =====================================================
+
+router.get(
+    '/:vendorId/commercial-terms',
+    vendorDetailsValidator,
+    validateRequest,
+    controller.getVendorCommercialTerms
+);
+
 
 module.exports = router;

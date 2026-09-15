@@ -1,275 +1,1468 @@
+const pool = require('../../config/database');
+
+
+// =====================================================
+// CREATE VENDOR
+// =====================================================
+
 async function createVendor(client, data) {
-  const { rows } = await client.query(
-    `INSERT INTO vendor
-      (vendor_code, vendor_type, primary_salutation, primary_first_name,
-       primary_last_name, display_name, company_name, vendor_language,
-       email, primary_number, secondary_number, pan, gstin, msme, currency,
-       opening_balance, accounts_payable, payment_terms, advance_required, status)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
-     RETURNING *`,
-    [
-      data.vendor_code, data.vendor_type, data.primary_salutation,
-      data.primary_first_name, data.primary_last_name, data.display_name,
-      data.company_name, data.vendor_language, data.email, data.primary_number,
-      data.secondary_number, data.pan, data.gstin || null, data.msme,
-      data.currency, data.opening_balance, data.accounts_payable,
-      data.payment_terms, data.advance_required, data.status
-    ]
-  );
-  return rows[0];
+
+    const query = `
+        INSERT INTO vendor (
+            vendor_code,
+            vendor_type,
+            primary_salutation,
+            primary_first_name,
+            primary_last_name,
+            display_name,
+            company_name,
+            vendor_language,
+            email,
+            primary_number,
+            secondary_number,
+            pan,
+            gstin,
+            msme,
+            currency,
+            opening_balance,
+            accounts_payable,
+            payment_terms,
+            advance_required,
+            status
+        )
+        VALUES (
+            $1, $2, $3, $4, $5,
+            $6, $7, $8, $9, $10,
+            $11, $12, $13, $14, $15,
+            $16, $17, $18, $19, $20
+        )
+        RETURNING
+            vendor_id AS "vendorId",
+            vendor_code AS "vendorCode";
+    `;
+
+    const values = [
+        data.vendorCode,
+        data.vendorType || 'Regular',
+        data.primaryContactPrefix || null,
+        data.primaryContactFirstName,
+        data.primaryContactLastName || null,
+        data.displayName,
+        data.companyName,
+        data.vendorLanguage || 'English',
+        data.emailAddress,
+        data.primaryNumber,
+        data.secondaryNumber || null,
+        data.pan,
+        data.gstin || null,
+        data.msme,
+        data.currencyCode || 'INR',
+        Number(data.openingBalance || 0),
+        Number(data.accountsPayable || 0),
+        data.paymentTermsId || 'Net 30',
+        data.advanceRequired || 'None',
+        data.status || 'ACTIVE'
+    ];
+
+    const result =
+        await client.query(
+            query,
+            values
+        );
+
+    return result.rows[0];
 }
 
-async function updateVendor(client, id, data) {
-  const { rows } = await client.query(
-    `UPDATE vendor SET
-      vendor_type=COALESCE($2,vendor_type),
-      primary_salutation=COALESCE($3,primary_salutation),
-      primary_first_name=COALESCE($4,primary_first_name),
-      primary_last_name=COALESCE($5,primary_last_name),
-      display_name=COALESCE($6,display_name),
-      company_name=COALESCE($7,company_name),
-      vendor_language=COALESCE($8,vendor_language),
-      email=COALESCE($9,email),
-      primary_number=COALESCE($10,primary_number),
-      secondary_number=COALESCE($11,secondary_number),
-      pan=COALESCE($12,pan),
-      gstin=COALESCE($13,gstin),
-      msme=COALESCE($14,msme),
-      currency=COALESCE($15,currency),
-      opening_balance=COALESCE($16,opening_balance),
-      accounts_payable=COALESCE($17,accounts_payable),
-      payment_terms=COALESCE($18,payment_terms),
-      advance_required=COALESCE($19,advance_required),
-      status=COALESCE($20,status),
-      updated_at=NOW()
-     WHERE vendor_id=$1
-     RETURNING *`,
-    [id, data.vendor_type, data.primary_salutation, data.primary_first_name,
-     data.primary_last_name, data.display_name, data.company_name,
-     data.vendor_language, data.email, data.primary_number, data.secondary_number,
-     data.pan, data.gstin, data.msme, data.currency, data.opening_balance,
-     data.accounts_payable, data.payment_terms, data.advance_required, data.status]
-  );
-  return rows[0];
+
+// =====================================================
+// CREATE VENDOR ADDRESS
+// =====================================================
+//
+// Maps the Customer-style frontend address fields to the
+// actual Vendor Address database columns.
+// =====================================================
+
+async function createAddress(
+    client,
+    vendorId,
+    address
+) {
+
+    const query = `
+        INSERT INTO vendor_address (
+            vendor_id,
+            address_type,
+            address_line1,
+            address_line2,
+            city,
+            state,
+            country,
+            pincode,
+            phone,
+            fax,
+            contact_name
+        )
+        VALUES (
+            $1, $2, $3, $4, $5,
+            $6, $7, $8, $9, $10, $11
+        )
+        RETURNING address_id;
+    `;
+
+    const values = [
+        vendorId,
+        address.addressType,
+        address.street1 || '',
+        address.street2 || null,
+        address.city || '',
+        address.state || '',
+        address.country || 'India',
+        address.zipCode || '',
+        address.phone || null,
+        address.fax || null,
+        address.attention || null
+    ];
+
+    const result =
+        await client.query(
+            query,
+            values
+        );
+
+    return result.rows[0];
 }
 
-async function findVendorById(client, id) {
-  const { rows } = await client.query(
-    `SELECT * FROM vendor WHERE vendor_id=$1`,
-    [id]
-  );
-  return rows[0];
+
+// =====================================================
+// CREATE VENDOR CONTACT
+// =====================================================
+
+async function createContact(
+    client,
+    vendorId,
+    contact
+) {
+
+    const query = `
+        INSERT INTO vendor_contact (
+            vendor_id,
+            salutation,
+            first_name,
+            last_name,
+            designation,
+            phone,
+            email,
+            is_primary
+        )
+        VALUES (
+            $1, $2, $3, $4,
+            $5, $6, $7, $8
+        )
+        RETURNING contact_id;
+    `;
+
+    // The current CreateVendorPage uses one combined name.
+    // Split it into first_name and last_name because the
+    // Vendor schema stores them separately.
+    const nameParts =
+        String(contact.name || '')
+            .trim()
+            .split(/\s+/);
+
+    const firstName =
+        nameParts.shift() || '';
+
+    const lastName =
+        nameParts.join(' ') || null;
+
+    const values = [
+        vendorId,
+        contact.salutation || null,
+        firstName,
+        lastName,
+        contact.designation || null,
+        contact.mobileNumber || '',
+        contact.emailAddress || null,
+        contact.isPrimary || false
+    ];
+
+    const result =
+        await client.query(
+            query,
+            values
+        );
+
+    return result.rows[0];
 }
 
-async function findVendorByPan(client, pan, excludeId = null) {
-  const { rows } = await client.query(
-    `SELECT vendor_id FROM vendor WHERE UPPER(pan)=UPPER($1)
-     AND ($2::bigint IS NULL OR vendor_id <> $2) LIMIT 1`,
-    [pan, excludeId]
-  );
-  return rows[0];
+
+// =====================================================
+// CREATE VENDOR BANK DETAILS
+// =====================================================
+
+async function createBankDetails(
+    client,
+    vendorId,
+    bank
+) {
+
+    const query = `
+        INSERT INTO vendor_bank (
+            vendor_id,
+            bank_name,
+            account_holder_name,
+            account_number,
+            ifsc_code,
+            open_date,
+            is_primary
+        )
+        VALUES (
+            $1, $2, $3, $4,
+            $5, $6, $7
+        )
+        RETURNING bank_id;
+    `;
+
+    const values = [
+        vendorId,
+        bank.bankName || '',
+        bank.accountHolder || '',
+        bank.accountNumber || '',
+        bank.ifscCode || '',
+        bank.openDate || null,
+        bank.isPrimary || false
+    ];
+
+    const result =
+        await client.query(
+            query,
+            values
+        );
+
+    return result.rows[0];
 }
 
-async function findVendorByGstin(client, gstin, excludeId = null) {
-  if (!gstin) return null;
-  const { rows } = await client.query(
-    `SELECT vendor_id FROM vendor WHERE UPPER(gstin)=UPPER($1)
-     AND ($2::bigint IS NULL OR vendor_id <> $2) LIMIT 1`,
-    [gstin, excludeId]
-  );
-  return rows[0];
+
+// =====================================================
+// DUPLICATE PAN CHECK
+// =====================================================
+
+async function findVendorByPan(
+    client,
+    pan
+) {
+
+    const result =
+        await client.query(
+            `
+            SELECT
+                vendor_id,
+                vendor_code
+            FROM vendor
+            WHERE UPPER(pan) = UPPER($1)
+            LIMIT 1
+            `,
+            [pan]
+        );
+
+    return result.rows[0];
 }
 
-async function listVendors(client, { search = '', page = 1, limit = 20 } = {}) {
-  const offset = (page - 1) * limit;
-  const term = `%${search}%`;
 
-  const data = await client.query(
-    `SELECT
-       v.vendor_id, v.vendor_code, v.display_name, v.company_name,
-       v.gstin, v.primary_first_name, v.primary_last_name,
-       v.email, v.primary_number, v.accounts_payable, v.status, v.created_at
-     FROM vendor v
-     WHERE ($1='' OR v.display_name ILIKE $2 OR v.company_name ILIKE $2
-            OR v.vendor_code ILIKE $2 OR v.gstin ILIKE $2)
-     ORDER BY v.created_at DESC
-     LIMIT $3 OFFSET $4`,
-    [search, term, limit, offset]
-  );
+// =====================================================
+// DUPLICATE GSTIN CHECK
+// =====================================================
 
-  const count = await client.query(
-    `SELECT COUNT(*)::int AS total FROM vendor v
-     WHERE ($1='' OR v.display_name ILIKE $2 OR v.company_name ILIKE $2
-            OR v.vendor_code ILIKE $2 OR v.gstin ILIKE $2)`,
-    [search, term]
-  );
+async function findVendorByGstin(
+    client,
+    gstin
+) {
 
-  return { rows: data.rows, total: count.rows[0].total };
+    if (!gstin) {
+        return null;
+    }
+
+    const result =
+        await client.query(
+            `
+            SELECT
+                vendor_id,
+                vendor_code
+            FROM vendor
+            WHERE UPPER(gstin) = UPPER($1)
+            LIMIT 1
+            `,
+            [gstin]
+        );
+
+    return result.rows[0];
 }
 
-async function createAddress(client, vendorId, a) {
-  const { rows } = await client.query(
-    `INSERT INTO vendor_address
-      (vendor_id,address_type,address_line1,address_line2,city,state,country,pincode,contact_name)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
-    [vendorId,a.address_type,a.address_line1,a.address_line2 || null,a.city,
-     a.state,a.country || 'India',a.pincode,a.contact_name || null]
-  );
-  return rows[0];
+
+// =====================================================
+// GET VENDOR LIST
+// =====================================================
+
+async function getVendors({
+    page,
+    limit,
+    offset,
+    search,
+    status,
+    sortBy,
+    sortOrder
+}) {
+
+    const values = [];
+
+    let whereConditions = `
+        WHERE 1 = 1
+    `;
+
+
+    // -------------------------------------------------
+    // Search
+    // -------------------------------------------------
+
+    if (search) {
+
+        values.push(`%${search}%`);
+
+        whereConditions += `
+            AND (
+                v.display_name ILIKE $${values.length}
+                OR v.company_name ILIKE $${values.length}
+                OR v.vendor_code ILIKE $${values.length}
+                OR v.gstin ILIKE $${values.length}
+                OR v.email ILIKE $${values.length}
+                OR v.primary_number ILIKE $${values.length}
+                OR CONCAT(
+                    v.primary_first_name,
+                    ' ',
+                    v.primary_last_name
+                ) ILIKE $${values.length}
+            )
+        `;
+    }
+
+
+    // -------------------------------------------------
+    // Status
+    // -------------------------------------------------
+
+    if (status) {
+
+        values.push(status);
+
+        whereConditions += `
+            AND UPPER(v.status) = UPPER($${values.length})
+        `;
+    }
+
+
+    // -------------------------------------------------
+    // Sort whitelist
+    // -------------------------------------------------
+
+    const sortColumnMap = {
+        displayName: 'v.display_name',
+        companyName: 'v.company_name',
+        vendorCode: 'v.vendor_code',
+        gstin: 'v.gstin',
+        email: 'v.email',
+        phone: 'v.primary_number',
+        status: 'v.status',
+        createdAt: 'v.created_at'
+    };
+
+    const orderColumn =
+        sortColumnMap[sortBy] ||
+        'v.created_at';
+
+    const orderDirection =
+        sortOrder === 'asc'
+            ? 'ASC'
+            : 'DESC';
+
+
+    // -------------------------------------------------
+    // Data query
+    // -------------------------------------------------
+
+    const dataQuery = `
+        SELECT
+            v.vendor_id AS "vendorId",
+            v.vendor_code AS "vendorCode",
+            v.display_name AS "displayName",
+            v.company_name AS "companyName",
+            v.gstin AS "gstin",
+
+            CONCAT(
+                v.primary_first_name,
+                CASE
+                    WHEN v.primary_last_name IS NOT NULL
+                    AND v.primary_last_name <> ''
+                    THEN ' ' || v.primary_last_name
+                    ELSE ''
+                END
+            ) AS "primaryContact",
+
+            v.email AS "email",
+            v.primary_number AS "phone",
+            v.status AS "status",
+
+            COALESCE(
+                v.accounts_payable,
+                0
+            ) AS "payable",
+
+            v.created_at AS "createdAt"
+
+        FROM vendor v
+
+        ${whereConditions}
+
+        ORDER BY
+            ${orderColumn} ${orderDirection}
+
+        LIMIT $${values.length + 1}
+        OFFSET $${values.length + 2}
+    `;
+
+    const dataResult =
+        await pool.query(
+            dataQuery,
+            [
+                ...values,
+                limit,
+                offset
+            ]
+        );
+
+
+    // -------------------------------------------------
+    // Count query
+    // -------------------------------------------------
+
+    const countQuery = `
+        SELECT COUNT(*) AS total
+        FROM vendor v
+        ${whereConditions}
+    `;
+
+    const countResult =
+        await pool.query(
+            countQuery,
+            values
+        );
+
+
+    return {
+        rows: dataResult.rows,
+
+        totalRecords:
+            Number(
+                countResult.rows[0].total
+            )
+    };
 }
 
-async function createContact(client, vendorId, c) {
-  const { rows } = await client.query(
-    `INSERT INTO vendor_contact
-      (vendor_id,salutation,first_name,last_name,designation,department,phone,email,is_primary)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
-    [vendorId,c.salutation || null,c.first_name,c.last_name || null,
-     c.designation || null,c.department || null,c.phone,c.email || null,c.is_primary]
-  );
-  return rows[0];
+
+// =====================================================
+// GET VENDOR BY ID
+// =====================================================
+
+async function getVendorById(vendorId) {
+
+    const query = `
+        SELECT
+            v.vendor_id AS "vendorId",
+            v.vendor_code AS "vendorCode",
+            v.vendor_type AS "vendorType",
+
+            v.primary_salutation
+                AS "primaryContactPrefix",
+
+            v.primary_first_name
+                AS "primaryContactFirstName",
+
+            v.primary_last_name
+                AS "primaryContactLastName",
+
+            v.display_name AS "displayName",
+            v.company_name AS "companyName",
+            v.vendor_language AS "vendorLanguage",
+
+            v.email AS "email",
+
+            v.primary_number
+                AS "primaryPhone",
+
+            v.secondary_number
+                AS "secondaryPhone",
+
+            v.pan AS "pan",
+            v.gstin AS "gstin",
+            v.msme AS "msme",
+            v.currency AS "currencyCode",
+
+            v.opening_balance
+                AS "openingBalance",
+
+            v.accounts_payable
+                AS "accountsPayable",
+
+            v.payment_terms
+                AS "paymentTerms",
+
+            v.advance_required
+                AS "advanceRequired",
+
+            v.status AS "status",
+
+            v.created_at AS "createdAt",
+            v.updated_at AS "updatedAt"
+
+        FROM vendor v
+
+        WHERE v.vendor_id = $1
+    `;
+
+    const result =
+        await pool.query(
+            query,
+            [vendorId]
+        );
+
+    return result.rows[0] || null;
 }
 
-async function createBank(client, vendorId, b) {
-  const { rows } = await client.query(
-    `INSERT INTO vendor_bank
-      (vendor_id,bank_name,account_holder_name,account_number,ifsc_code,open_date,is_primary)
-     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-    [vendorId,b.bank_name,b.account_holder_name,b.account_number,b.ifsc_code,
-     b.open_date || null,b.is_primary]
-  );
-  return rows[0];
+
+// =====================================================
+// GET VENDOR ADDRESSES
+// =====================================================
+
+async function getVendorAddresses(vendorId) {
+
+    const query = `
+        SELECT
+            address_id AS "addressId",
+            vendor_id AS "vendorId",
+
+            address_type
+                AS "addressType",
+
+            contact_name
+                AS "attention",
+
+            country,
+
+            address_line1
+                AS "street1",
+
+            address_line2
+                AS "street2",
+
+            city,
+            state,
+
+            pincode
+                AS "zipCode",
+
+            phone,
+            fax,
+
+            created_at
+                AS "createdAt"
+
+        FROM vendor_address
+
+        WHERE vendor_id = $1
+
+        ORDER BY
+            address_id
+    `;
+
+    const result =
+        await pool.query(
+            query,
+            [vendorId]
+        );
+
+    return result.rows;
 }
 
-async function createDocument(client, vendorId, d) {
-  const { rows } = await client.query(
-    `INSERT INTO vendor_document
-      (vendor_id,document_type,document_number,document_url)
-     VALUES ($1,$2,$3,$4) RETURNING *`,
-    [vendorId,d.document_type,d.document_number || null,d.document_url || null]
-  );
-  return rows[0];
+
+// =====================================================
+// GET VENDOR CONTACTS
+// =====================================================
+
+async function getVendorContacts(vendorId) {
+
+    const query = `
+        SELECT
+            contact_id AS "contactId",
+            vendor_id AS "vendorId",
+
+            salutation,
+
+            first_name
+                AS "firstName",
+
+            last_name
+                AS "lastName",
+
+            designation,
+            department,
+
+            phone
+                AS "mobileNumber",
+
+            email
+                AS "emailAddress",
+
+            is_primary
+                AS "isPrimary",
+
+            created_at
+                AS "createdAt"
+
+        FROM vendor_contact
+
+        WHERE vendor_id = $1
+
+        ORDER BY
+            is_primary DESC,
+            contact_id
+    `;
+
+    const result =
+        await pool.query(
+            query,
+            [vendorId]
+        );
+
+    return result.rows;
 }
 
-async function createReelSpecification(client, vendorId, r) {
-  const { rows } = await client.query(
-    `INSERT INTO reel_specification
-      (vendor_id,material_code,material_name,gsm_min,gsm_max,
-       reel_width_min,reel_width_max,quality_score,status)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
-    [vendorId,r.material_code,r.material_name,r.gsm_min,r.gsm_max,
-     r.reel_width_min,r.reel_width_max,r.quality_score,r.status]
-  );
-  return rows[0];
+
+// =====================================================
+// GET VENDOR BANK DETAILS
+// =====================================================
+
+async function getVendorBanks(vendorId) {
+
+    const query = `
+        SELECT
+            bank_id AS "bankId",
+            vendor_id AS "vendorId",
+
+            bank_name
+                AS "bankName",
+
+            account_holder_name
+                AS "accountHolder",
+
+            account_number
+                AS "accountNumber",
+
+            ifsc_code
+                AS "ifscCode",
+
+            open_date
+                AS "openDate",
+
+            is_primary
+                AS "isPrimary",
+
+            created_at
+                AS "createdAt"
+
+        FROM vendor_bank
+
+        WHERE vendor_id = $1
+
+        ORDER BY
+            is_primary DESC,
+            bank_id
+    `;
+
+    const result =
+        await pool.query(
+            query,
+            [vendorId]
+        );
+
+    return result.rows;
 }
 
-async function getVendorAddresses(client, vendorId) {
-  const { rows } = await client.query(
-    `SELECT * FROM vendor_address WHERE vendor_id=$1 ORDER BY address_type`, [vendorId]
-  );
-  return rows;
+
+// =====================================================
+// GET VENDOR DOCUMENTS
+// =====================================================
+//
+// NOTE:
+// This assumes vendor_document contains the following
+// columns:
+// document_id, vendor_id, document_type,
+// document_number, document_url, created_at.
+//
+// Verify this table schema if the Documents section
+// produces a database-column error.
+// =====================================================
+
+async function getVendorDocuments(vendorId) {
+
+    const query = `
+        SELECT
+            document_id AS "documentId",
+            vendor_id AS "vendorId",
+
+            document_type
+                AS "documentType",
+
+            document_number
+                AS "documentNumber",
+
+            document_url
+                AS "documentUrl",
+
+            created_at
+                AS "createdAt"
+
+        FROM vendor_document
+
+        WHERE vendor_id = $1
+
+        ORDER BY
+            document_id DESC
+    `;
+
+    const result =
+        await pool.query(
+            query,
+            [vendorId]
+        );
+
+    return result.rows;
 }
 
-async function getVendorContacts(client, vendorId) {
-  const { rows } = await client.query(
-    `SELECT * FROM vendor_contact WHERE vendor_id=$1 ORDER BY is_primary DESC, contact_id`, [vendorId]
-  );
-  return rows;
+
+// =====================================================
+// GET VENDOR SUMMARY
+// =====================================================
+//
+// Summary values are derived only from columns that exist
+// in the supplied Purchase Order and Vendor schemas.
+//
+// lifetimeOrders
+//     = number of Purchase Orders for this Vendor
+//
+// lifetimeValue
+//     = SUM(purchase_order.estimated_total)
+//
+// outstandingBalance
+//     = vendor.accounts_payable
+//
+// activeOrders
+//     = Purchase Orders not Delivered/Closed/Cancelled
+//
+// onTimeDeliveryPercentage
+//     = percentage of completed POs delivered on or
+//       before expected_delivery_date
+// =====================================================
+
+async function getVendorSummary(vendorId) {
+
+    const query = `
+        SELECT
+
+            (
+                SELECT COUNT(*)
+
+                FROM purchase_order po
+
+                WHERE po.vendor_id = $1
+
+            ) AS "lifetimeOrders",
+
+
+            (
+                SELECT COALESCE(
+                    SUM(po.estimated_total),
+                    0
+                )
+
+                FROM purchase_order po
+
+                WHERE po.vendor_id = $1
+
+            ) AS "lifetimeValue",
+
+
+            (
+                SELECT COALESCE(
+                    v.accounts_payable,
+                    0
+                )
+
+                FROM vendor v
+
+                WHERE v.vendor_id = $1
+
+            ) AS "outstandingBalance",
+
+
+            (
+                SELECT COUNT(*)
+
+                FROM purchase_order po
+
+                WHERE po.vendor_id = $1
+
+                AND UPPER(
+                    COALESCE(
+                        po.delivery_status,
+                        ''
+                    )
+                ) NOT IN (
+                    'DELIVERED',
+                    'CLOSED',
+                    'CANCELLED'
+                )
+
+            ) AS "activeOrders",
+
+
+            (
+                SELECT COALESCE(
+
+                    AVG(
+                        CASE
+
+                            WHEN
+                                po.actual_delivery_date IS NULL
+                                OR
+                                po.expected_delivery_date IS NULL
+
+                            THEN NULL
+
+
+                            WHEN
+                                po.actual_delivery_date
+                                <=
+                                po.expected_delivery_date
+
+                            THEN 100
+
+
+                            ELSE 0
+
+                        END
+                    ),
+
+                    0
+
+                )
+
+                FROM purchase_order po
+
+                WHERE po.vendor_id = $1
+
+            ) AS "onTimeDeliveryPercentage"
+    `;
+
+    const result =
+        await pool.query(
+            query,
+            [vendorId]
+        );
+
+    const row =
+        result.rows[0];
+
+    return {
+
+        lifetimeOrders:
+            Number(
+                row.lifetimeOrders || 0
+            ),
+
+        lifetimeValue:
+            Number(
+                row.lifetimeValue || 0
+            ),
+
+        outstandingBalance:
+            Number(
+                row.outstandingBalance || 0
+            ),
+
+        activeOrders:
+            Number(
+                row.activeOrders || 0
+            ),
+
+        onTimeDeliveryPercentage:
+            Number(
+                row.onTimeDeliveryPercentage || 0
+            )
+    };
 }
 
-async function getVendorBanks(client, vendorId) {
-  const { rows } = await client.query(
-    `SELECT * FROM vendor_bank WHERE vendor_id=$1 ORDER BY is_primary DESC, bank_id`, [vendorId]
-  );
-  return rows;
+// =====================================================
+// GET VENDOR REEL SPECIFICATIONS
+// =====================================================
+//
+// IMPORTANT:
+// reel_specification does NOT contain vendor_id.
+//
+// Therefore Vendor -> Reel Specifications is resolved as:
+//
+// vendor
+//    ↓
+// purchase_order
+//    ↓
+// purchase_order_item
+//    ↓
+// reel_specification
+//
+// This prevents the previous invalid query:
+//
+// reel_specification.vendor_id
+//
+// from being used.
+// =====================================================
+
+async function getVendorReelSpecifications(
+    vendorId,
+    search = ''
+) {
+
+    const values = [
+        vendorId
+    ];
+
+    let whereConditions = `
+        WHERE po.vendor_id = $1
+    `;
+
+
+    // -------------------------------------------------
+    // Search
+    // -------------------------------------------------
+
+    if (search && search.trim()) {
+
+        values.push(
+            `%${search.trim()}%`
+        );
+
+        whereConditions += `
+            AND (
+                poi.reel_spec ILIKE $2
+                OR poi.reel_description ILIKE $2
+                OR poi.paper_type ILIKE $2
+            )
+        `;
+    }
+
+
+    // -------------------------------------------------
+    // Query
+    // -------------------------------------------------
+
+    const query = `
+        SELECT DISTINCT
+
+            poi.reel_id
+                AS "reelId",
+
+            rs.reel_code
+                AS "reelCode",
+
+            poi.reel_spec
+                AS "reelSpec",
+
+            poi.reel_description
+                AS "reelDescription",
+
+            poi.paper_type
+                AS "paperType",
+
+            poi.paper_gsm
+                AS "paperGsm",
+
+            poi.reel_width
+                AS "reelWidth",
+
+            poi.reel_bf
+                AS "reelBf"
+
+        FROM purchase_order po
+
+        INNER JOIN purchase_order_item poi
+
+            ON poi.purchase_order_id =
+               po.purchase_order_id
+
+        LEFT JOIN reel_specification rs
+
+            ON rs.reel_id =
+               poi.reel_id
+
+        ${whereConditions}
+
+        ORDER BY
+            poi.reel_spec,
+            poi.reel_id
+    `;
+
+    const result =
+        await pool.query(
+            query,
+            values
+        );
+
+    return result.rows;
 }
 
-async function getVendorDocuments(client, vendorId) {
-  const { rows } = await client.query(
-    `SELECT * FROM vendor_document WHERE vendor_id=$1 ORDER BY document_id DESC`, [vendorId]
-  );
-  return rows;
+
+// =====================================================
+// GET VENDOR PURCHASE ORDER HISTORY
+// =====================================================
+//
+// One row is returned per Purchase Order Item.
+//
+// Actual Purchase Order columns:
+//
+// purchase_order_id
+// purchase_order_number
+// pr_id
+// pr_number
+// vendor_id
+// po_date
+// expected_delivery_date
+// actual_delivery_date
+// delivery_status
+// item_count
+// item_total
+// estimated_total
+//
+// Actual Purchase Order Item columns:
+//
+// po_item_id
+// purchase_order_id
+// reel_id
+// reel_spec
+// reel_description
+// paper_type
+// paper_gsm
+// reel_width
+// reel_bf
+// quantity
+// unit_rate
+// total_amount
+//
+// There is NO:
+// po_number
+// material_description
+// unit
+// value
+// qc_status
+// purchase_order_item_id
+//
+// Therefore aliases are used where the frontend expects
+// those conceptual values.
+// =====================================================
+
+async function getVendorPurchaseOrderHistory({
+    vendorId,
+    page,
+    limit,
+    offset,
+    search,
+    startDate,
+    endDate
+}) {
+
+    const values = [
+        vendorId
+    ];
+
+    let whereConditions = `
+        WHERE po.vendor_id = $1
+    `;
+
+
+    // -------------------------------------------------
+    // Search
+    // -------------------------------------------------
+
+    if (search && search.trim()) {
+
+        values.push(
+            `%${search.trim()}%`
+        );
+
+        whereConditions += `
+            AND (
+                po.purchase_order_number ILIKE $2
+                OR poi.reel_spec ILIKE $2
+                OR poi.reel_description ILIKE $2
+                OR poi.paper_type ILIKE $2
+            )
+        `;
+    }
+
+
+    // -------------------------------------------------
+    // Start Date
+    // -------------------------------------------------
+
+    if (startDate) {
+
+        values.push(startDate);
+
+        whereConditions += `
+            AND po.po_date >= $${values.length}
+        `;
+    }
+
+
+    // -------------------------------------------------
+    // End Date
+    // -------------------------------------------------
+
+    if (endDate) {
+
+        values.push(endDate);
+
+        whereConditions += `
+            AND po.po_date <= $${values.length}
+        `;
+    }
+
+
+    // -------------------------------------------------
+    // Data query values
+    // -------------------------------------------------
+
+    const dataValues = [
+        ...values,
+        limit,
+        offset
+    ];
+
+
+    // -------------------------------------------------
+    // Data query
+    // -------------------------------------------------
+
+    const dataQuery = `
+        SELECT
+
+            po.purchase_order_id
+                AS "purchaseOrderId",
+
+            po.purchase_order_number
+                AS "poNumber",
+
+            po.purchase_order_number
+                AS "orderNumber",
+
+            po.po_date
+                AS "poDate",
+
+            poi.po_item_id
+                AS "poItemId",
+
+            poi.reel_id
+                AS "reelId",
+
+            poi.reel_spec
+                AS "reelSpec",
+
+            poi.reel_description
+                AS "materialDescription",
+
+            poi.reel_description
+                AS "reelDescription",
+
+            poi.paper_type
+                AS "paperType",
+
+            poi.paper_gsm
+                AS "paperGsm",
+
+            poi.reel_width
+                AS "reelWidth",
+
+            poi.reel_bf
+                AS "reelBf",
+
+            poi.quantity
+                AS "quantity",
+
+            poi.unit_rate
+                AS "unitRate",
+
+            poi.total_amount
+                AS "totalAmount",
+
+            poi.total_amount
+                AS "value",
+
+            po.item_count
+                AS "itemCount",
+
+            po.item_total
+                AS "itemTotal",
+
+            po.estimated_total
+                AS "estimatedTotal",
+
+            po.expected_delivery_date
+                AS "expectedDeliveryDate",
+
+            po.actual_delivery_date
+                AS "actualDeliveryDate",
+
+            po.delivery_status
+                AS "deliveryStatus"
+
+        FROM purchase_order po
+
+        INNER JOIN purchase_order_item poi
+
+            ON poi.purchase_order_id =
+               po.purchase_order_id
+
+        ${whereConditions}
+
+        ORDER BY
+            po.po_date DESC,
+            po.purchase_order_id DESC,
+            poi.po_item_id DESC
+
+        LIMIT $${values.length + 1}
+
+        OFFSET $${values.length + 2}
+    `;
+
+    const dataResult =
+        await pool.query(
+            dataQuery,
+            dataValues
+        );
+
+
+    // -------------------------------------------------
+    // Count query
+    // -------------------------------------------------
+
+    const countQuery = `
+        SELECT COUNT(*) AS total
+
+        FROM purchase_order po
+
+        INNER JOIN purchase_order_item poi
+
+            ON poi.purchase_order_id =
+               po.purchase_order_id
+
+        ${whereConditions}
+    `;
+
+    const countResult =
+        await pool.query(
+            countQuery,
+            values
+        );
+
+
+    return {
+
+        rows:
+            dataResult.rows,
+
+        totalRecords:
+            Number(
+                countResult.rows[0].total
+            )
+    };
 }
 
-async function getReelSpecifications(client, vendorId, search = '') {
-  const term = `%${search}%`;
-  const { rows } = await client.query(
-    `SELECT * FROM reel_specification
-     WHERE vendor_id=$1
-       AND ($2='' OR material_code ILIKE $3 OR material_name ILIKE $3)
-     ORDER BY reel_specification_id DESC`,
-    [vendorId, search, term]
-  );
-  return rows;
+
+// =====================================================
+// GET VENDOR COMMERCIAL TERMS
+// =====================================================
+//
+// Actual Bill schema contains:
+//
+// bill_id
+// bill_number
+// purchase_order_id
+// vendor_id
+// vendor_code
+// bill_date
+// due_date
+// delivery_status
+// grn_status
+// item_count
+// item_total
+// gst_rate
+// gst_amount
+// discount_rate
+// discount_amount
+// total_amount
+//
+// There is NO bill.status.
+//
+// There is also NO bill_item.amount.
+// The correct Bill Item column is total_amount.
+//
+// Since the current schema does not contain paid amount or
+// payment status, outstanding balance is taken from
+// vendor.accounts_payable.
+// =====================================================
+
+async function getVendorCommercialTerms(vendorId) {
+
+    const query = `
+        SELECT
+
+            v.currency
+                AS "currencyCode",
+
+            v.opening_balance
+                AS "openingBalance",
+
+            v.accounts_payable
+                AS "accountsPayable",
+
+            v.payment_terms
+                AS "paymentTerms",
+
+            v.advance_required
+                AS "advanceRequired",
+
+            COALESCE(
+                v.accounts_payable,
+                0
+            ) AS "outstandingBalance",
+
+            COALESCE(
+
+                (
+                    SELECT
+                        SUM(
+                            b.total_amount
+                        )
+
+                    FROM bill b
+
+                    WHERE b.vendor_id =
+                          v.vendor_id
+                ),
+
+                0
+
+            ) AS "totalBilledAmount"
+
+        FROM vendor v
+
+        WHERE v.vendor_id = $1
+    `;
+
+
+    const result =
+        await pool.query(
+            query,
+            [vendorId]
+        );
+
+
+    if (!result.rows[0]) {
+        return null;
+    }
+
+
+    const row =
+        result.rows[0];
+
+
+    return {
+
+        currencyCode:
+            row.currencyCode,
+
+
+        openingBalance:
+            Number(
+                row.openingBalance || 0
+            ),
+
+
+        accountsPayable:
+            Number(
+                row.accountsPayable || 0
+            ),
+
+
+        paymentTerms:
+            row.paymentTerms,
+
+
+        advanceRequired:
+            row.advanceRequired,
+
+
+        outstandingBalance:
+            Number(
+                row.outstandingBalance || 0
+            ),
+
+
+        totalBilledAmount:
+            Number(
+                row.totalBilledAmount || 0
+            )
+    };
 }
 
-async function getOrderHistory(client, vendorId, { search = '', from = null, to = null } = {}) {
-  const term = `%${search}%`;
-  const { rows } = await client.query(
-    `SELECT
-       po.purchase_order_id,
-       po.po_number,
-       po.po_date,
-       poi.material_description,
-       poi.quantity,
-       poi.unit,
-       poi.value,
-       po.delivery_status,
-       po.qc_status
-     FROM purchase_order po
-     JOIN purchase_order_item poi ON poi.purchase_order_id=po.purchase_order_id
-     WHERE po.vendor_id=$1
-       AND ($2='' OR po.po_number ILIKE $3 OR poi.material_description ILIKE $3)
-       AND ($4::date IS NULL OR po.po_date >= $4)
-       AND ($5::date IS NULL OR po.po_date <= $5)
-     ORDER BY po.po_date DESC, po.purchase_order_id DESC`,
-    [vendorId, search, term, from, to]
-  );
-  return rows;
-}
 
-async function getVendorSummary(client, vendorId) {
-  // Use independent aggregates so joining PO items and bill items does not
-  // multiply amounts when a PO contains multiple items/bills.
-  const { rows } = await client.query(
-    `SELECT
-       (SELECT COUNT(*) FROM purchase_order WHERE vendor_id=$1)::int AS total_orders,
-       COALESCE((
-         SELECT SUM(poi.value)
-         FROM purchase_order_item poi
-         JOIN purchase_order po ON po.purchase_order_id=poi.purchase_order_id
-         WHERE po.vendor_id=$1
-       ),0)::numeric AS total_purchase_value,
-       COALESCE((
-         SELECT SUM(bi.amount)
-         FROM bill_item bi
-         JOIN bill b ON b.bill_id=bi.bill_id
-         WHERE b.vendor_id=$1 AND b.status='Pending'
-       ),0)::numeric AS outstanding_value,
-       COALESCE((
-         SELECT AVG(po.on_time_percent)
-         FROM purchase_order po
-         WHERE po.vendor_id=$1 AND po.on_time_percent IS NOT NULL
-       ),0)::numeric AS on_time_delivery,
-       COALESCE((
-         SELECT COUNT(*) FILTER (WHERE po.qc_status LIKE 'Rejected%') * 100.0
-                / NULLIF(COUNT(*),0)
-         FROM purchase_order po
-         WHERE po.vendor_id=$1
-       ),0)::numeric AS qc_rejection_rate`,
-    [vendorId]
-  );
-  return rows[0];
-}
-
-async function deleteVendor(client, id) {
-  const result = await client.query(`DELETE FROM vendor WHERE vendor_id=$1`, [id]);
-  return result.rowCount > 0;
-}
+// =====================================================
+// MODULE EXPORTS
+// =====================================================
 
 module.exports = {
-  createVendor, updateVendor, findVendorById, findVendorByPan, findVendorByGstin,
-  listVendors, createAddress, createContact, createBank, createDocument,
-  createReelSpecification, getVendorAddresses, getVendorContacts, getVendorBanks,
-  getVendorDocuments, getReelSpecifications, getOrderHistory, getVendorSummary,
-  deleteVendor,
+
+    // Create
+    createVendor,
+    createAddress,
+    createContact,
+    createBankDetails,
+
+    // Duplicate checks
+    findVendorByPan,
+    findVendorByGstin,
+
+    // Vendor list
+    getVendors,
+
+    // Vendor details
+    getVendorById,
+    getVendorAddresses,
+    getVendorContacts,
+    getVendorBanks,
+    getVendorDocuments,
+
+    // Vendor dashboard
+    getVendorSummary,
+
+    // Vendor-specific tabs
+    getVendorReelSpecifications,
+    getVendorPurchaseOrderHistory,
+    getVendorCommercialTerms
 };
