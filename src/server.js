@@ -1,13 +1,18 @@
 const app = require('./app');
+const pool = require('./config/database');
 
-const PORT =
-    process.env.PORT || 3000;
+const PORT = process.env.PORT || 3000;
 
+pool.connect((err, client, release) => {
+    if (err) {
+        console.error('PostgreSQL connection failed:', err.message);
+        return;
+    }
 
-app.listen(PORT, () => {
+    console.log('PostgreSQL connected successfully');
+    release();
 
-    console.log(
-        `Backend running on port ${PORT}`
-    );
-
+    app.listen(PORT, () => {
+        console.log(`Backend running on port ${PORT}`);
+    });
 });

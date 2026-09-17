@@ -12,6 +12,9 @@ const customerRoutes =
 const vendorRoutes =
     require('./modules/vendor/vendor.routes');
 
+const quoteRoutes = 
+    require('./modules/quote/quote.routes');
+
 
 // =====================================================
 // ERROR HANDLER
@@ -19,7 +22,6 @@ const vendorRoutes =
 
 const errorMiddleware =
     require('./middleware/error.middleware');
-
 
 const app = express();
 
@@ -87,6 +89,11 @@ app.use(
 app.use(
     '/api/v1/customers',
     customerRoutes
+);
+
+app.use(
+    '/api/v1/quotes',
+    quoteRoutes
 );
 
 
