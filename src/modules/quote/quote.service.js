@@ -68,6 +68,7 @@ function calculateBoardSize(
     linerGsm = 120,
     fluteGsm = 120,
     fluteFactor = 1.5,
+    paperType = 'NS',
     maxDeckle = 128,
     maxCutting = 175,
     TA = 2,
@@ -233,7 +234,7 @@ function calculateBoardSize(
             if (isExactAvailable) {
                 return [{
                     itemCode: `RM-${String(startCodeId).padStart(4, '0')}`,
-                    itemName: `CYS-${exactDeckleStr}CMS-${gsm}GSM-18BF (${typeCode})`,
+                    itemName: `${paperType || 'NS'}-${exactDeckleStr}CMS-${gsm}GSM-18BF (${typeCode})`,
                     totalWeight: 1500,
                     requiredWeight: Number(reqWeight.toFixed(2)),
                     indicator: 'Green'
@@ -243,7 +244,7 @@ function calculateBoardSize(
                 const nextDeckle = deckle + 5;
                 return [{
                     itemCode: `RM-${String(startCodeId + 1).padStart(4, '0')}`,
-                    itemName: `CYS-${String(nextDeckle).padStart(3, '0')}CMS-${gsm}GSM-18BF (${typeCode} - Alt)`,
+                    itemName: `${paperType || 'NS'}-${String(nextDeckle).padStart(3, '0')}CMS-${gsm}GSM-18BF (${typeCode} - Alt)`,
                     totalWeight: 1000,
                     requiredWeight: Number(reqWeight.toFixed(2)),
                     indicator: 'Green' // Available alternative
@@ -461,9 +462,9 @@ async function createQuote(data) {
             const itemInsertQuery = `
                 INSERT INTO quote_item (
                     quote_id, box_length, box_width, box_height, quantity,
-                    board_size, box_weight, total_weight, ply_type, top_gsm, liner_gsm, flute_gsm, created_at
+                    board_size, box_weight, total_weight, ply_type, top_gsm, liner_gsm, flute_gsm, box_type, paper_type, box_size, created_at
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW())
             `;
             
             const itemValues = [
@@ -478,7 +479,10 @@ async function createQuote(data) {
                 item.plyType || 3,
                 item.topGsm || 0,
                 item.linerGsm || 0,
-                item.fluteGsm || 0
+                item.fluteGsm || 0,
+                item.boxType || '',
+                item.paperType || '',
+                item.boxSize || ''
             ];
             
             await client.query(itemInsertQuery, itemValues);

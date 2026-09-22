@@ -2,7 +2,7 @@ const quoteService = require('./quote.service');
 
 async function calculateBoard(req, res, next) {
     try {
-        const { length, width, height, qty, ply, topGsm, linerGsm, fluteGsm, fluteFactor } = req.body;
+        const { length, width, height, qty, ply, topGsm, linerGsm, fluteGsm, fluteFactor, paperType } = req.body;
         
         if (!length || !width || !height) {
             return res.status(400).json({
@@ -26,7 +26,7 @@ async function calculateBoard(req, res, next) {
         }
         const parsedFluteFactor = Number(fluteFactor) || 1.5;
 
-        const result = quoteService.calculateBoardSize(length, width, height, quantity, plyType, parsedTopGsm, parsedLinerGsm, parsedFluteGsm, parsedFluteFactor);
+        const result = quoteService.calculateBoardSize(length, width, height, quantity, plyType, parsedTopGsm, parsedLinerGsm, parsedFluteGsm, parsedFluteFactor, paperType);
         
         if (result.error) {
             return res.status(400).json({

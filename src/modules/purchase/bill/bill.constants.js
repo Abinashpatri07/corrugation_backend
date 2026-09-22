@@ -1,0 +1,31 @@
+/*
+ * Bill Constants
+ */
+
+const DELIVERY_STATUS = {
+  PENDING: "PENDING",
+  PARTIAL: "PARTIAL",
+  DELIVERED: "DELIVERED"
+};
+
+
+const GRN_STATUS = {
+  PENDING: "PENDING",
+  PARTIAL: "PARTIAL",
+  COMPLETED: "COMPLETED"
+};
+
+
+const DEFAULTS = {
+  GST_RATE: 0,
+  DISCOUNT_RATE: 0,
+  DELIVERY_STATUS: "PENDING",
+  GRN_STATUS: "PENDING"
+};
+
+
+module.exports = {
+  DELIVERY_STATUS,
+  GRN_STATUS,
+  DEFAULTS
+};
