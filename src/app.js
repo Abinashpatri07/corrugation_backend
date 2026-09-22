@@ -15,6 +15,8 @@ const vendorRoutes =
 const quoteRoutes = 
     require('./modules/quote/quote.routes');
 
+const salesOrderRoutes = 
+    require('./modules/sales_order/sales_order.routes');
 
 // =====================================================
 // ERROR HANDLER
@@ -96,6 +98,10 @@ app.use(
     quoteRoutes
 );
 
+app.use(
+    '/api/v1/sales-orders',
+    salesOrderRoutes
+);
 
 // -----------------------------------------------------
 // VENDOR ROUTES

@@ -56,6 +56,7 @@
  * ABL = 2 × (BXW + BXH)
  * ============================================================
  */
+const pool = require('../../config/database');
 
 function calculateBoardSize(
     BXL,
@@ -63,7 +64,9 @@ function calculateBoardSize(
     BXH,
     QTY = 1,
     P = 5,
-    gsm = 145,
+    topGsm = 145,
+    linerGsm = 120,
+    fluteGsm = 120,
     fluteFactor = 1.5,
     maxDeckle = 128,
     maxCutting = 175,
@@ -193,622 +196,217 @@ function calculateBoardSize(
         return papers * Math.floor((ply - 1) / 2);
     }
 
-    /**
-     * Common response object.
-     */
-    function makeResult({
-        scenario,
-        orientation,
-        mode,
-        boardWidth,
-        boardLength,
-        widthUps,
-        lengthUps,
-        boxesPerBoard,
-        piecesPerBox,
-        papers,
-        reason
-    }) {
-        const boxArea = (2 * ((L * W) + (L * H) + (W * H))) + (W * W);
-        const boardArea = boardWidth * boardLength;
-        let areaBoxCount = Math.floor(boardArea / boxArea);
-        
-        if (areaBoxCount < 1) {
-            areaBoxCount = 1;
-        }
-
-        const areaPapers = Math.ceil(quantity / areaBoxCount);
-
+    function makeResult(bestScenario) {
+        const boardArea = bestScenario.boardWidth * bestScenario.boardLength;
         const boardAreaM2 = boardArea / 10000;
-        const effectiveLayerFactor = 1 + ((ply - 1) / 2) * (1 + fluteFactor);
-        const boardWeightKg = (boardAreaM2 * gsm * effectiveLayerFactor) / 1000;
-        const boxWeightKg = boardWeightKg * piecesPerBox;
+        const linerFlutePairs = (ply - 1) / 2;
+        
+        const topWt = boardAreaM2 * topGsm;
+        const linerWt = boardAreaM2 * linerGsm * linerFlutePairs;
+        const fluteWt = boardAreaM2 * fluteGsm * fluteFactor * linerFlutePairs;
+        
+        const boardWeightKg = (topWt + linerWt + fluteWt) / 1000;
+        const boxWeightKg = boardWeightKg * bestScenario.piecesPerBox;
         const grossWeightKg = boxWeightKg * 1.05; // 5% variation
         const netWeightKg = grossWeightKg * 0.95; // 5% reduction
 
+        const papers = Math.ceil((quantity * bestScenario.piecesPerBox) / bestScenario.boxesPerBoard);
+
+        const boxArea = (2 * ((L * W) + (L * H) + (W * H))) + (W * W);
+        const areaBoxCount = Math.floor(boardArea / boxArea);
+
+        // Calculate total required weights
+        const reqTopWt = (topWt * papers) / 1000;
+        const reqLinerWt = (linerWt * papers) / 1000;
+        const reqFluteWt = (fluteWt * papers) / 1000;
+
+        const deckle = round(bestScenario.boardWidth);
+
+        // Helper function to mock checking inventory and finding next available sizes (uske upar wale)
+        function checkAndGenerateMaterial(typeCode, gsm, reqWeight, startCodeId) {
+            const exactDeckleStr = String(deckle).padStart(3, '0');
+            
+            // Mock: Let's assume the exact size is out of stock, so we find the next available size.
+            // In a real scenario, this would query the DB.
+            const isExactAvailable = false; 
+            
+            if (isExactAvailable) {
+                return [{
+                    itemCode: `RM-${String(startCodeId).padStart(4, '0')}`,
+                    itemName: `CYS-${exactDeckleStr}CMS-${gsm}GSM-18BF (${typeCode})`,
+                    totalWeight: 1500,
+                    requiredWeight: Number(reqWeight.toFixed(2)),
+                    indicator: 'Green'
+                }];
+            } else {
+                // Return ONLY the next available larger size, instead of showing all of them.
+                const nextDeckle = deckle + 5;
+                return [{
+                    itemCode: `RM-${String(startCodeId + 1).padStart(4, '0')}`,
+                    itemName: `CYS-${String(nextDeckle).padStart(3, '0')}CMS-${gsm}GSM-18BF (${typeCode} - Alt)`,
+                    totalWeight: 1000,
+                    requiredWeight: Number(reqWeight.toFixed(2)),
+                    indicator: 'Green' // Available alternative
+                }];
+            }
+        }
+
+        const materialAvailability = [
+            ...checkAndGenerateMaterial('Top', topGsm, reqTopWt, 1),
+            ...checkAndGenerateMaterial('Flute', fluteGsm, reqFluteWt, 4)
+        ];
+
+        if (ply > 2) {
+            materialAvailability.push(...checkAndGenerateMaterial('Liner', linerGsm, reqLinerWt, 7));
+        }
+
         return {
             success: true,
-
-            scenario,
-
-            mode,
-
-            orientation,
-
-            box: {
-                length: L,
-                width: W,
-                height: H
-            },
-
-            sudoSize: {
-                width: round(SBW),
-                length: round(SBL)
-            },
-
-            alternateSize: {
-                width: round(ABW),
-                length: round(ABL)
-            },
-
-            widthUps,
-
-            lengthUps,
-
-            ups: areaBoxCount,
-
-            pieces: piecesPerBox,
-
-            boardWidth: round(boardWidth),
-
-            boardLength: round(boardLength),
-
-            boardSize: [
-                round(boardWidth),
-                round(boardLength)
-            ],
-
-            papers: areaPapers,
-
-            twoPly:
-                calculateTwoPly(
-                    areaPapers,
-                    ply
-                ),
-
+            scenario: bestScenario.scenario,
+            mode: bestScenario.mode,
+            orientation: bestScenario.orientation,
+            box: { length: L, width: W, height: H },
+            sudoSize: { width: round(SBW), length: round(SBL) },
+            alternateSize: { width: round(ABW), length: round(ABL) },
+            widthUps: bestScenario.widthUps,
+            lengthUps: bestScenario.lengthUps,
+            ups: bestScenario.boxesPerBoard,
+            boxCountByArea: areaBoxCount,
+            pieces: bestScenario.piecesPerBox,
+            boardWidth: round(bestScenario.boardWidth),
+            boardLength: round(bestScenario.boardLength),
+            boardSize: [round(bestScenario.boardWidth), round(bestScenario.boardLength)],
+            papers: papers,
+            twoPly: calculateTwoPly(papers, ply),
             quantity: quantity,
-
             ply,
-
             weight: {
                 boardWeightKg: Number(boardWeightKg.toFixed(4)),
                 boxWeightKg: Number(boxWeightKg.toFixed(4)),
                 grossWeightKg: Number(grossWeightKg.toFixed(4)),
                 netWeightKg: Number(netWeightKg.toFixed(4)),
-                gsm,
-                effectiveLayerFactor
+                topGsm, linerGsm, fluteGsm, fluteFactor
             },
-
-            reason
+            materialAvailability,
+            reason: bestScenario.reason
         };
     }
 
+    const scenarios = [];
+
     // =========================================================
-    // SCENARIO 1
+    // SCENARIO 1: STANDARD
     // =========================================================
-    //
-    // SBW <= 128
-    // AND
-    // SBL <= 175
-    //
-    // Standard orientation fits directly.
-    // =========================================================
-
-    if (
-        SBW <= maxDeckle &&
-        SBL <= maxCutting
-    ) {
-        const WUps =
-            getUps(
-                maxDeckle,
-                SBW,
-                TA
-            );
-
-        const LUps =
-            getUps(
-                maxCutting,
-                SBL,
-                GA
-            );
-
-        if (
-            WUps >= 1 &&
-            LUps >= 1
-        ) {
-            const BDW =
-                (WUps * SBW) + TA;
-
-            const BDL =
-                (LUps * SBL) + GA;
-
-            // Final safety check
-            if (
-                BDW <= maxDeckle &&
-                BDL <= maxCutting
-            ) {
-                const boxesPerBoard =
-                    WUps * LUps;
-
-                const papers =
-                    calculatePapers(
-                        quantity,
-                        boxesPerBoard,
-                        1
-                    );
-
-                return makeResult({
-                    scenario: 1,
-                    orientation: "STANDARD",
-                    mode: "NO_JOINT",
-
-                    boardWidth: BDW,
-                    boardLength: BDL,
-
-                    widthUps: WUps,
-                    lengthUps: LUps,
-
-                    boxesPerBoard,
-
-                    piecesPerBox: 2,
-
-                    papers,
-
-                    reason:
-                        "Sudo board width and length fit within machine limits."
-                });
-            }
-        }
+    const wUpsStd = getUps(maxDeckle, SBW, TA);
+    const lUpsStd = getUps(maxCutting, SBL, GA);
+    if (wUpsStd >= 1 && lUpsStd >= 1) {
+        scenarios.push({
+            scenario: 1,
+            orientation: "STANDARD",
+            mode: wUpsStd * lUpsStd > 1 ? "MULTIPLE_BOX" : "NO_JOINT",
+            widthUps: wUpsStd,
+            lengthUps: lUpsStd,
+            boxesPerBoard: wUpsStd * lUpsStd,
+            piecesPerBox: 1,
+            boardWidth: (wUpsStd * SBW) + TA,
+            boardLength: (lUpsStd * SBL) + GA,
+            reason: "Standard orientation fits."
+        });
     }
 
     // =========================================================
-    // SCENARIO 2
+    // SCENARIO 2/4: ALTERNATE
     // =========================================================
-    //
-    // Standard does not fit.
-    // Alternate orientation fits.
-    //
-    // ABW <= 128
-    // ABL <= 175
-    //
-    // Example:
-    //
-    // L=103 W=17 H=17
-    //
-    // ABW = 120
-    // ABL = 68
-    //
-    // Board Width = 120 + 2 = 122
-    // Board Length = 68 + 5 = 73
-    // =========================================================
-
-    if (
-        ABW <= maxDeckle &&
-        ABL <= maxCutting
-    ) {
-        const WUps =
-            getUps(
-                maxDeckle,
-                ABW,
-                TA
-            );
-
-        if (WUps >= 1) {
-            /*
-             * Based on your Scenario 2:
-             * use ONE ABL unit.
-             *
-             * Do not multiply ABL by LUps here.
-             */
-            const LUps = 1;
-
-            const BDW =
-                (WUps * ABW) + TA;
-
-            const BDL =
-                ABL + GA;
-
-            if (
-                BDW <= maxDeckle &&
-                BDL <= maxCutting
-            ) {
-                const boxesPerBoard =
-                    WUps;
-
-                const papers =
-                    calculatePapers(
-                        quantity,
-                        boxesPerBoard,
-                        1
-                    );
-
-                return makeResult({
-                    scenario: 2,
-                    orientation: "ALTERNATE",
-                    mode: "JOINT_POSSIBLE",
-
-                    boardWidth: BDW,
-                    boardLength: BDL,
-
-                    widthUps: WUps,
-                    lengthUps: LUps,
-
-                    boxesPerBoard,
-
-                    piecesPerBox: 1,
-
-                    papers,
-
-                    reason:
-                        "Standard orientation does not fit; alternate orientation fits."
-                });
-            }
-        }
+    const wUpsAlt = getUps(maxDeckle, ABW, TA);
+    const lUpsAlt = getUps(maxCutting, ABL, GA);
+    if (wUpsAlt >= 1 && lUpsAlt >= 1) {
+        scenarios.push({
+            scenario: 2,
+            orientation: "ALTERNATE",
+            mode: wUpsAlt * lUpsAlt > 1 ? "MULTIPLE_BOX" : "JOINT_POSSIBLE",
+            widthUps: wUpsAlt,
+            lengthUps: lUpsAlt,
+            boxesPerBoard: wUpsAlt * lUpsAlt,
+            piecesPerBox: 1,
+            boardWidth: (wUpsAlt * ABW) + TA,
+            boardLength: (lUpsAlt * ABL) + GA,
+            reason: "Alternate orientation fits."
+        });
     }
 
     // =========================================================
-    // SCENARIO 3
+    // SCENARIO 5: JOINT (2 pieces per box)
     // =========================================================
-    //
-    // Both standard and alternate exceed limits.
-    //
-    // Check whether the SUDO dimensions can be accommodated
-    // by multiple ups / multiple sections.
-    //
-    // Example:
-    //
-    // L=38 W=38 H=12
-    //
-    // SBW = 50
-    // SBL = 152
-    //
-    // WUps = floor(128 / 50) = 2
-    //
-    // Board Width:
-    // 2 × 50 + 2 = 102
-    //
-    // Board Length:
-    // 152 + 5 = 157
-    //
-    // Boxes per board = 2
-    //
-    // QTY 100:
-    // Papers = 100 / 2 = 50
-    // =========================================================
-
-    if (
-        SBW <= maxDeckle &&
-        SBL <= maxCutting
-    ) {
-        /*
-         * Normally Scenario 1 would already have
-         * returned above.
-         *
-         * This block is here only as a safe fallback.
-         */
+    const jointWidth = SBW + TA;
+    const jointLength = (L + W) + GA + TA;
+    if (jointWidth <= maxDeckle && jointLength <= maxCutting) {
+        scenarios.push({
+            scenario: 5,
+            orientation: "STANDARD_JOINT",
+            mode: "JOINT",
+            widthUps: 1,
+            lengthUps: 1,
+            boxesPerBoard: 1,
+            piecesPerBox: 2,
+            boardWidth: jointWidth,
+            boardLength: jointLength,
+            reason: "Box is made of 2 board pieces joined."
+        });
     }
 
-    // Multiple boxes across deckle
-    const multipleWidthUps =
-        getUps(
-            maxDeckle,
-            SBW,
-            TA
-        );
-
-    // Use ONE cutting length when the sudo length
-    // itself fits the cutting limit.
-    if (
-        multipleWidthUps >= 2 &&
-        SBL <= maxCutting
-    ) {
-        const BDW =
-            (multipleWidthUps * SBW) + TA;
-
-        const BDL =
-            SBL + GA;
-
-        if (
-            BDW <= maxDeckle &&
-            BDL <= maxCutting
-        ) {
-            const boxesPerBoard =
-                multipleWidthUps;
-
-            const papers =
-                calculatePapers(
-                    quantity,
-                    boxesPerBoard,
-                    1
-                );
-
-            return makeResult({
+    // =========================================================
+    // SCENARIO 3: SPLIT BOARD
+    // =========================================================
+    const canSplitWidth = SBW > maxDeckle && SBW <= (2 * maxDeckle);
+    const canSplitLength = SBL > maxCutting && SBL <= (2 * maxCutting);
+    if (canSplitWidth || canSplitLength) {
+        const splitWidthPieces = canSplitWidth ? 2 : 1;
+        const splitLengthPieces = canSplitLength ? 2 : 1;
+        const splitBoardWidth = canSplitWidth ? (SBW / 2) + TA : SBW + TA;
+        const splitBoardLength = canSplitLength ? (SBL / 2) + GA : SBL + GA;
+        
+        if (splitBoardWidth <= maxDeckle && splitBoardLength <= maxCutting) {
+            scenarios.push({
                 scenario: 3,
-                orientation: "STANDARD_MULTIPLE",
-                mode: "MULTIPLE_BOX",
-
-                boardWidth: BDW,
-                boardLength: BDL,
-
-                widthUps: multipleWidthUps,
-                lengthUps: 1,
-
-                boxesPerBoard,
-
-                piecesPerBox: 1,
-
-                papers,
-
-                reason:
-                    "Multiple boxes fit across the deckle width."
-            });
-        }
-    }
-
-    // =========================================================
-    // SCENARIO 4
-    // =========================================================
-    //
-    // Alternate orientation allows multiple boxes
-    // in the cutting direction.
-    //
-    // Example:
-    //
-    // L=103 W=15 H=15
-    //
-    // ABW = 118
-    // ABW + TA = 120
-    //
-    // ABL = 60
-    //
-    // 2 × 60 + 5 = 125
-    //
-    // Board = 120 × 125
-    //
-    // QTY=100
-    // Papers=50
-    // =========================================================
-
-    if (
-        ABW <= maxDeckle &&
-        ABL <= maxCutting
-    ) {
-        const widthUps = getUps(
-            maxDeckle,
-            ABW,
-            TA
-        );
-
-        /*
-         * For Scenario 4 we intentionally allow
-         * multiple cutting sections.
-         */
-        const lengthUps = Math.floor(
-            (maxCutting - GA) / ABL
-        );
-
-        if (
-            widthUps >= 1 &&
-            lengthUps >= 2
-        ) {
-            const BDW =
-                (widthUps * ABW) + TA;
-
-            const BDL =
-                (lengthUps * ABL) + GA;
-
-            if (
-                BDW <= maxDeckle &&
-                BDL <= maxCutting
-            ) {
-                const boxesPerBoard =
-                    widthUps * lengthUps;
-
-                const papers =
-                    calculatePapers(
-                        quantity,
-                        boxesPerBoard,
-                        1
-                    );
-
-                return makeResult({
-                    scenario: 4,
-                    orientation: "ALTERNATE_MULTIPLE",
-                    mode: "MULTIPLE_BOX",
-
-                    boardWidth: BDW,
-                    boardLength: BDL,
-
-                    widthUps,
-                    lengthUps,
-
-                    boxesPerBoard,
-
-                    piecesPerBox: 1,
-
-                    papers,
-
-                    reason:
-                        "Alternate orientation is used with multiple cutting sections."
-                });
-            }
-        }
-    }
-
-    // =========================================================
-    // SCENARIO 3 / SPLIT BOARD
-    // =========================================================
-    //
-    // If sudo dimensions exceed machine size, check
-    // whether splitting is possible.
-    // =========================================================
-
-    const canSplitWidth =
-        SBW > maxDeckle &&
-        SBW <= (2 * maxDeckle);
-
-    const canSplitLength =
-        SBL > maxCutting &&
-        SBL <= (2 * maxCutting);
-
-    if (
-        canSplitWidth ||
-        canSplitLength
-    ) {
-        let boardWidth;
-        let boardLength;
-
-        let widthPieces = 1;
-        let lengthPieces = 1;
-
-        // -----------------------------------------
-        // Split width
-        // -----------------------------------------
-
-        if (canSplitWidth) {
-            widthPieces = 2;
-
-            boardWidth =
-                (SBW / 2) + TA;
-        } else {
-            boardWidth =
-                SBW + TA;
-        }
-
-        // -----------------------------------------
-        // Split length
-        // -----------------------------------------
-
-        if (canSplitLength) {
-            lengthPieces = 2;
-
-            boardLength =
-                (SBL / 2) + GA;
-        } else {
-            boardLength =
-                SBL + GA;
-        }
-
-        const piecesPerBox =
-            widthPieces * lengthPieces;
-
-        if (
-            boardWidth <= maxDeckle &&
-            boardLength <= maxCutting
-        ) {
-            const papers =
-                calculatePapers(
-                    quantity,
-                    1,
-                    piecesPerBox
-                );
-
-            return makeResult({
-                scenario: 3,
-
                 orientation: "STANDARD_SPLIT",
-
                 mode: "MULTI_BOARD",
-
-                boardWidth,
-                boardLength,
-
                 widthUps: 1,
                 lengthUps: 1,
-
                 boxesPerBoard: 1,
-
-                piecesPerBox,
-
-                papers,
-
-                reason:
-                    "The box requires multiple board sections because the standard blank exceeds machine limits."
+                piecesPerBox: splitWidthPieces * splitLengthPieces,
+                boardWidth: splitBoardWidth,
+                boardLength: splitBoardLength,
+                reason: "Board split to fit machine limits."
             });
         }
     }
 
     // =========================================================
-    // SCENARIO 5
+    // SELECT BEST SCENARIO
     // =========================================================
-    //
-    // Multiple boards joined to make one box.
-    //
-    // Example:
-    //
-    // L=104 W=51 H=51
-    //
-    // SBW = 102
-    //
-    // Board Width:
-    // 102 + 2 = 104
-    //
-    // Board Length:
-    // (104 + 51) + 5 + 2
-    // = 162
-    //
-    // 4 board pieces per box
-    //
-    // QTY=100
-    // Papers=400
-    // =========================================================
+    if (scenarios.length > 0) {
+        // Sort criteria:
+        // 1. Max boxesPerBoard (we want max yield)
+        // 2. Min piecesPerBox (we want 1-piece boxes ideally)
+        // 3. Min boardArea (least waste)
+        scenarios.sort((a, b) => {
+            // 1. MORE BOXES PER BOARD = HIGHER PRIORITY
+            if (a.boxesPerBoard !== b.boxesPerBoard) {
+                return b.boxesPerBoard - a.boxesPerBoard; // DESC
+            }
+            
+            // 2. FEWER PIECES PER BOX = SECOND PRIORITY
+            if (a.piecesPerBox !== b.piecesPerBox) {
+                return a.piecesPerBox - b.piecesPerBox; // ASC
+            }
+            
+            // 3. SMALLER BOARD AREA = THIRD PRIORITY
+            const areaA = a.boardWidth * a.boardLength;
+            const areaB = b.boardWidth * b.boardLength;
+            return areaA - areaB; // ASC (less area = better if yield is same)
+        });
 
-    if (
-        (L + W) < maxCutting
-    ) {
-        const BDW =
-            SBW + TA;
-
-        const BDL =
-            (L + W) + GA + TA;
-
-        if (
-            BDW <= maxDeckle &&
-            BDL <= maxCutting
-        ) {
-            /*
-             * According to your Scenario 5 example,
-             * one box needs 4 board pieces.
-             */
-            const piecesPerBox = 4;
-
-            const papers =
-                quantity *
-                piecesPerBox;
-
-            return makeResult({
-                scenario: 5,
-
-                orientation: "STANDARD_JOINT",
-
-                mode: "JOINT",
-
-                boardWidth: BDW,
-                boardLength: BDL,
-
-                widthUps: 1,
-                lengthUps: 1,
-
-                boxesPerBoard: 1,
-
-                piecesPerBox,
-
-                papers,
-
-                reason:
-                    "Multiple board pieces are joined to form one box."
-            });
-        }
+        return makeResult(scenarios[0]);
     }
 
     // =========================================================
@@ -817,33 +415,183 @@ function calculateBoardSize(
 
     return {
         success: false,
-
-        error:
-            "Cannot calculate a board size within the configured machine limits.",
-
-        box: {
-            length: L,
-            width: W,
-            height: H
-        },
-
-        sudoSize: {
-            width: round(SBW),
-            length: round(SBL)
-        },
-
-        alternateSize: {
-            width: round(ABW),
-            length: round(ABL)
-        },
-
-        machineLimits: {
-            maxDeckle,
-            maxCutting
-        }
+        error: "Cannot calculate a board size within the configured machine limits.",
+        box: { length: L, width: W, height: H },
+        sudoSize: { width: round(SBW), length: round(SBL) },
+        alternateSize: { width: round(ABW), length: round(ABL) },
+        machineLimits: { maxDeckle, maxCutting }
     };
 }
 
+async function createQuote(data) {
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+
+        // Get next quote id for formatting
+        const countRes = await client.query('SELECT COALESCE(MAX(quote_id), 0) + 1 as next_id FROM quote');
+        const nextId = countRes.rows[0].next_id;
+        const quoteNumber = `Q-${String(nextId).padStart(6, '0')}`;
+
+        // Insert into quote
+        const quoteInsertQuery = `
+            INSERT INTO quote (
+                customer_id, quote_date, expiry_date, sales_man, project_name, reference_no,
+                created_at, created_by, quote_number
+            )
+            VALUES ($1, CURRENT_DATE, CURRENT_DATE + INTERVAL '30 days', $2, $3, $4, NOW(), 1, $5)
+            RETURNING quote_id
+        `;
+        
+        // Mock sales_man to 1 if not provided (Manoj Kumar in UI)
+        const quoteValues = [
+            data.customerId,
+            data.salesMan || 1,
+            data.projectName || '',
+            data.referenceNo || '',
+            quoteNumber
+        ];
+
+        const quoteRes = await client.query(quoteInsertQuery, quoteValues);
+        const quoteId = quoteRes.rows[0].quote_id;
+
+        // Insert into quote_item
+        if (data.items && data.items.length > 0) {
+            const item = data.items[0]; // Currently UI only supports 1 item at a time
+            const itemInsertQuery = `
+                INSERT INTO quote_item (
+                    quote_id, box_length, box_width, box_height, quantity,
+                    board_size, box_weight, total_weight, ply_type, top_gsm, liner_gsm, flute_gsm, created_at
+                )
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
+            `;
+            
+            const itemValues = [
+                quoteId,
+                item.length,
+                item.width,
+                item.height,
+                item.quantity,
+                item.boardSize || '',
+                item.boxWeight || 0,
+                item.totalWeight || 0,
+                item.plyType || 3,
+                item.topGsm || 0,
+                item.linerGsm || 0,
+                item.fluteGsm || 0
+            ];
+            
+            await client.query(itemInsertQuery, itemValues);
+        }
+
+        await client.query('COMMIT');
+        return { quoteId };
+    } catch (e) {
+        await client.query('ROLLBACK');
+        throw e;
+    } finally {
+        client.release();
+    }
+}
+
+async function getAllQuotes() {
+    const client = await pool.connect();
+    try {
+        const query = `
+            SELECT 
+                q.quote_id as id,
+                TO_CHAR(q.quote_date, 'DD/MM/YYYY') as date,
+                q.quote_number as "quoteNo",
+                c.display_name as "customerName",
+                MAX(CONCAT(qi.ply_type, '-Ply')) as "boxSpec",
+                SUM(qi.quantity) as quantity,
+                SUM(qi.total_weight) as "totalWeight"
+            FROM quote q
+            LEFT JOIN customer c ON q.customer_id = c.customer_id
+            LEFT JOIN quote_item qi ON q.quote_id = qi.quote_id
+            GROUP BY q.quote_id, q.quote_date, q.quote_number, c.display_name, q.created_at
+            ORDER BY q.created_at DESC
+        `;
+        const res = await client.query(query);
+        
+        // Calculate amount dynamically as we did in frontend (total_weight * 50) + 18% GST
+        const quotes = res.rows.map(row => {
+            const weight = parseFloat(row.totalWeight) || 0;
+            const amount = (weight * 50 * 1.18).toFixed(2);
+            return {
+                ...row,
+                amount: new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount).replace('₹', '').trim()
+            };
+        });
+
+        return quotes;
+    } finally {
+        client.release();
+    }
+}
+
+async function getQuoteById(id) {
+    const client = await pool.connect();
+    try {
+        const query = `
+            SELECT 
+                q.quote_id as id,
+                TO_CHAR(q.quote_date, 'DD/MM/YYYY') as date,
+                q.quote_number as "quoteNo",
+                c.display_name as "customerName",
+                CONCAT_WS(', ', ba.street_1, ba.street_2, ba.city, ba.state, ba.zip_code) as "billingAddress",
+                CONCAT_WS(', ', sa.street_1, sa.street_2, sa.city, sa.state, sa.zip_code) as "shippingAddress",
+                c.gstin as "gstin",
+                CONCAT_WS(' ', c.primary_contact_first_name, c.primary_contact_last_name) as "poc",
+                q.sales_man as "salesperson",
+                TO_CHAR(q.expiry_date, 'DD/MM/YYYY') as "expectedShipment",
+                CONCAT(qi.ply_type, '-Ply') as "boxSpec",
+                qi.quantity as quantity,
+                qi.total_weight as "totalWeight",
+                qi.box_length as "boxLength",
+                qi.box_width as "boxWidth",
+                qi.box_height as "boxHeight",
+                qi.ply_type as "plyType",
+                qi.top_gsm as "topGsm",
+                qi.liner_gsm as "linerGsm",
+                qi.flute_gsm as "fluteGsm",
+                qi.board_size as "boardSize",
+                qi.box_type as "boxType",
+                qi.paper_type as "paperType",
+                qi.box_size as "boxSize"
+            FROM quote q
+            LEFT JOIN customer c ON q.customer_id = c.customer_id
+            LEFT JOIN customer_addresses ba ON c.customer_id = ba.customer_id AND ba.address_type = 'BILLING'
+            LEFT JOIN customer_addresses sa ON c.customer_id = sa.customer_id AND sa.address_type = 'SHIPPING'
+            LEFT JOIN quote_item qi ON q.quote_id = qi.quote_id
+            WHERE q.quote_id = $1
+        `;
+        const res = await client.query(query, [id]);
+        
+        if (res.rows.length === 0) {
+            return null;
+        }
+
+        const row = res.rows[0];
+        const weight = parseFloat(row.totalWeight) || 0;
+        const subTotal = (weight * 50).toFixed(2);
+        const gst = (weight * 50 * 0.18).toFixed(2);
+        const amount = (parseFloat(subTotal) + parseFloat(gst)).toFixed(2);
+        
+        return {
+            ...row,
+            subTotal: new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2 }).format(subTotal),
+            gst: new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2 }).format(gst),
+            amount: new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount).replace('₹', '').trim()
+        };
+    } finally {
+        client.release();
+    }
+}
+
 module.exports = {
-    calculateBoardSize
+    calculateBoardSize,
+    createQuote,
+    getAllQuotes,
+    getQuoteById
 };
