@@ -18,6 +18,12 @@ const quoteRoutes =
 const salesOrderRoutes = 
     require('./modules/sales_order/sales_order.routes');
 
+const purchaseOrderRoutes =
+    require('./modules/purchase/purchaseOrder/purchase.routes');
+
+const billRoutes =
+    require('./modules/purchase/bill/bill.routes');
+
 // =====================================================
 // ERROR HANDLER
 // =====================================================
@@ -101,6 +107,16 @@ app.use(
 app.use(
     '/api/v1/sales-orders',
     salesOrderRoutes
+);
+
+app.use(
+    '/api/v1/purchase-orders',
+    purchaseOrderRoutes
+);
+
+app.use(
+    '/api/v1/purchase/bills',
+    billRoutes
 );
 
 // -----------------------------------------------------
