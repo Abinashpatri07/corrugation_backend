@@ -56,7 +56,92 @@ async function getBillById(billId) {
     return bill;
 }
 
+async function createBill(billData) {
+    const {
+        bill_number,
+        purchase_order_id = null,
+        vendor_id,
+        vendor_code = null,
+        billing_address = null,
+        shipping_address = null,
+        bill_date = null,
+        due_date = null,
+        delivery_status = 'Pending',
+        grn_status = 'Pending',
+        item_count = 0,
+        item_total = 0,
+        gst_rate = 0,
+        gst_amount = 0,
+        discount_rate = 0,
+        discount_amount = 0,
+        total_amount = 0,
+        remarks = null,
+        created_by = null,
+        items = []
+    } = billData;
+
+    const query = `
+        INSERT INTO bill (
+            bill_number, purchase_order_id, vendor_id, vendor_code,
+            billing_address, shipping_address, bill_date, due_date,
+            delivery_status, grn_status, item_count, item_total,
+            gst_rate, gst_amount, discount_rate, discount_amount,
+            total_amount, remarks, created_by
+        )
+        VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+            $11, $12, $13, $14, $15, $16, $17, $18, $19
+        )
+        RETURNING *;
+    `;
+    const values = [
+        bill_number, purchase_order_id, vendor_id, vendor_code,
+        billing_address, shipping_address, bill_date, due_date,
+        delivery_status, grn_status, item_count, item_total,
+        gst_rate, gst_amount, discount_rate, discount_amount,
+        total_amount, remarks, created_by
+    ];
+
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const { rows } = await client.query(query, values);
+        const bill = rows[0];
+
+        const itemQuery = `
+            INSERT INTO bill_item (
+                bill_id, reel_spec, reel_description, quantity, unit_rate, total_amount, remarks, created_by
+            )
+            VALUES (
+                $1, $2, $3, $4, $5, $6, $7, $8
+            )
+            RETURNING *;
+        `;
+        
+        for (const item of items) {
+            await client.query(itemQuery, [
+                bill.bill_id, 
+                item.reel_spec, 
+                item.reel_description, 
+                item.quantity, 
+                item.unit_rate, 
+                item.total_amount, 
+                item.remarks, 
+                created_by
+            ]);
+        }
+        await client.query('COMMIT');
+        return bill;
+    } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+    } finally {
+        client.release();
+    }
+}
+
 module.exports = {
     getAllBills,
-    getBillById
+    getBillById,
+    createBill
 };

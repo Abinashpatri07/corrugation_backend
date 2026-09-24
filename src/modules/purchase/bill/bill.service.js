@@ -8,7 +8,12 @@ async function getBillById(billId) {
     return await repository.getBillById(billId);
 }
 
+async function createBill(billData) {
+    return await repository.createBill(billData);
+}
+
 module.exports = {
     getAllBills,
-    getBillById
+    getBillById,
+    createBill
 };

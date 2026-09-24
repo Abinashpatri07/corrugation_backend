@@ -33,7 +33,22 @@ async function getBillById(req, res, next) {
     }
 }
 
+async function createBill(req, res, next) {
+    try {
+        const billData = req.body;
+        const newBill = await service.createBill(billData);
+        res.status(201).json({
+            success: true,
+            message: 'Bill created successfully',
+            data: newBill
+        });
+    } catch (error) {
+        next(error);
+    }
+}
+
 module.exports = {
     getAllBills,
-    getBillById
+    getBillById,
+    createBill
 };
