@@ -72,7 +72,10 @@ function calculateBoardSize(
     maxDeckle = 128,
     maxCutting = 175,
     TA = 2,
-    GA = 5
+    GA = 5,
+    topBf = 18,
+    linerBf = 18,
+    fluteBf = 18
 ) {
     // =========================================================
     // 1. Convert / validate input
@@ -222,6 +225,15 @@ function calculateBoardSize(
         const reqFluteWt = (fluteWt * papers) / 1000;
 
         const deckle = round(bestScenario.boardWidth);
+        
+        // Calculate Board Factor (BF)
+        let calculatedBf = 0;
+        if (ply === 2) {
+            // For 2-ply, linerFlutePairs is 0.5, so 1 top + 1 flute
+            calculatedBf = ((topGsm * topBf) + (fluteGsm * fluteBf)) / 1000;
+        } else {
+            calculatedBf = ((topGsm * topBf) + (linerGsm * linerBf * linerFlutePairs) + (fluteGsm * fluteBf * linerFlutePairs)) / 1000;
+        }
 
         // Helper function to mock checking inventory and finding next available sizes (uske upar wale)
         function checkAndGenerateMaterial(typeCode, gsm, reqWeight, startCodeId) {
@@ -288,6 +300,7 @@ function calculateBoardSize(
                 netWeightKg: Number(netWeightKg.toFixed(4)),
                 topGsm, linerGsm, fluteGsm, fluteFactor
             },
+            boardFactor: Number(calculatedBf.toFixed(2)),
             materialAvailability,
             reason: bestScenario.reason
         };
@@ -462,9 +475,9 @@ async function createQuote(data) {
             const itemInsertQuery = `
                 INSERT INTO quote_item (
                     quote_id, box_length, box_width, box_height, quantity,
-                    board_size, box_weight, total_weight, ply_type, top_gsm, liner_gsm, flute_gsm, box_type, paper_type, box_size, created_at
+                    board_size, box_weight, total_weight, ply_type, top_gsm, liner_gsm, flute_gsm, box_type, paper_type, box_size, box_spec, box_description, created_at
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW())
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, NOW())
             `;
             
             const itemValues = [
@@ -482,7 +495,9 @@ async function createQuote(data) {
                 item.fluteGsm || 0,
                 item.boxType || '',
                 item.paperType || '',
-                item.boxSize || ''
+                item.boxSize || '',
+                item.itemName || '',
+                item.itemDescription || ''
             ];
             
             await client.query(itemInsertQuery, itemValues);
@@ -507,7 +522,7 @@ async function getAllQuotes() {
                 TO_CHAR(q.quote_date, 'DD/MM/YYYY') as date,
                 q.quote_number as "quoteNo",
                 c.display_name as "customerName",
-                MAX(CONCAT(qi.ply_type, '-Ply')) as "boxSpec",
+                MAX(qi.box_spec) as "boxSpec",
                 SUM(qi.quantity) as quantity,
                 SUM(qi.total_weight) as "totalWeight"
             FROM quote q
@@ -549,7 +564,6 @@ async function getQuoteById(id) {
                 CONCAT_WS(' ', c.primary_contact_first_name, c.primary_contact_last_name) as "poc",
                 q.sales_man as "salesperson",
                 TO_CHAR(q.expiry_date, 'DD/MM/YYYY') as "expectedShipment",
-                CONCAT(qi.ply_type, '-Ply') as "boxSpec",
                 qi.quantity as quantity,
                 qi.total_weight as "totalWeight",
                 qi.box_length as "boxLength",
@@ -562,7 +576,9 @@ async function getQuoteById(id) {
                 qi.board_size as "boardSize",
                 qi.box_type as "boxType",
                 qi.paper_type as "paperType",
-                qi.box_size as "boxSize"
+                qi.box_size as "boxSize",
+                qi.box_spec as "boxSpec",
+                qi.box_description as "boxDescription"
             FROM quote q
             LEFT JOIN customer c ON q.customer_id = c.customer_id
             LEFT JOIN customer_addresses ba ON c.customer_id = ba.customer_id AND ba.address_type = 'BILLING'
@@ -578,15 +594,18 @@ async function getQuoteById(id) {
 
         const row = res.rows[0];
         const weight = parseFloat(row.totalWeight) || 0;
+        const quantity = parseInt(row.quantity) || 1;
         const subTotal = (weight * 50).toFixed(2);
         const gst = (weight * 50 * 0.18).toFixed(2);
         const amount = (parseFloat(subTotal) + parseFloat(gst)).toFixed(2);
+        const unitRate = (subTotal / quantity).toFixed(2);
         
         return {
             ...row,
             subTotal: new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2 }).format(subTotal),
             gst: new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2 }).format(gst),
-            amount: new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount).replace('₹', '').trim()
+            amount: new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount).replace('₹', '').trim(),
+            unitRate: new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2 }).format(unitRate)
         };
     } finally {
         client.release();
