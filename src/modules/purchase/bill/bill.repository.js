@@ -94,18 +94,31 @@ async function createBill(billData) {
         )
         RETURNING *;
     `;
-    const values = [
-        bill_number, purchase_order_id, vendor_id, vendor_code,
-        billing_address, shipping_address, bill_date, due_date,
-        delivery_status, grn_status, item_count, item_total,
-        gst_rate, gst_amount, discount_rate, discount_amount,
-        total_amount, remarks, created_by
-    ];
-
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
-        const { rows } = await client.query(query, values);
+
+        // Look up actual purchase_order_id if user typed a PO number string (e.g., "PO-000001")
+        let final_po_id = purchase_order_id;
+        if (purchase_order_id) {
+            const poResult = await client.query(
+                `SELECT purchase_order_id FROM purchase_order WHERE purchase_order_number = $1 OR purchase_order_id::text = $1`,
+                [String(purchase_order_id).trim()]
+            );
+            if (poResult.rows.length > 0) {
+                final_po_id = poResult.rows[0].purchase_order_id;
+            } else {
+                throw new Error(`Purchase Order '${purchase_order_id}' not found. Please enter a valid Order Number (e.g., PO-000001).`);
+            }
+        }
+
+        const { rows } = await client.query(query, [
+            bill_number, final_po_id, vendor_id, vendor_code,
+            billing_address, shipping_address, bill_date, due_date,
+            delivery_status, grn_status, item_count, item_total,
+            gst_rate, gst_amount, discount_rate, discount_amount,
+            total_amount, remarks, created_by
+        ]);
         const bill = rows[0];
 
         const itemQuery = `
