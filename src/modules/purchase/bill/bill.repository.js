@@ -25,6 +25,39 @@ async function getAllBills() {
     return rows;
 }
 
+async function getBillById(billId) {
+    const query = `
+        SELECT
+            b.*,
+            v.vendor_code AS vendor_code_from_vendor,
+            v.display_name AS vendor_name,
+            v.company_name,
+            v.gstin,
+            v.primary_number AS primary_contact_number,
+            CONCAT_WS(', ', va.street_1, va.street_2, va.city, va.state, va.zip_code) AS vendor_address,
+            v.primary_first_name AS primary_contact_name
+        FROM bill b
+        LEFT JOIN vendor v ON b.vendor_id = v.vendor_id
+        LEFT JOIN vendor_addresses va ON v.vendor_id = va.vendor_id AND va.address_type = 'BILLING'
+        WHERE b.bill_id = $1
+    `;
+    const { rows } = await pool.query(query, [billId]);
+    if (rows.length === 0) return null;
+    const bill = rows[0];
+
+    const itemsQuery = `
+        SELECT
+            *
+        FROM bill_item
+        WHERE bill_id = $1
+        ORDER BY bill_item_id ASC
+    `;
+    const items = await pool.query(itemsQuery, [billId]);
+    bill.items = items.rows;
+    return bill;
+}
+
 module.exports = {
-    getAllBills
+    getAllBills,
+    getBillById
 };

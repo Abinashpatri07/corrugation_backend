@@ -13,6 +13,27 @@ async function getAllBills(req, res, next) {
     }
 }
 
+async function getBillById(req, res, next) {
+    try {
+        const { id } = req.params;
+        const data = await service.getBillById(id);
+        if (!data) {
+            return res.status(404).json({
+                success: false,
+                message: 'Bill not found'
+            });
+        }
+        res.status(200).json({
+            success: true,
+            message: 'Bill fetched successfully',
+            data
+        });
+    } catch (error) {
+        next(error);
+    }
+}
+
 module.exports = {
-    getAllBills
+    getAllBills,
+    getBillById
 };

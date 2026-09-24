@@ -4,6 +4,11 @@ async function getAllBills() {
     return await repository.getAllBills();
 }
 
+async function getBillById(billId) {
+    return await repository.getBillById(billId);
+}
+
 module.exports = {
-    getAllBills
+    getAllBills,
+    getBillById
 };
