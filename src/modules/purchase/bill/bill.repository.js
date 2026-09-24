@@ -34,11 +34,10 @@ async function getBillById(billId) {
             v.company_name,
             v.gstin,
             v.primary_number AS primary_contact_number,
-            CONCAT_WS(', ', va.street_1, va.street_2, va.city, va.state, va.zip_code) AS vendor_address,
+            b.billing_address AS vendor_address,
             v.primary_first_name AS primary_contact_name
         FROM bill b
         LEFT JOIN vendor v ON b.vendor_id = v.vendor_id
-        LEFT JOIN vendor_addresses va ON v.vendor_id = va.vendor_id AND va.address_type = 'BILLING'
         WHERE b.bill_id = $1
     `;
     const { rows } = await pool.query(query, [billId]);
