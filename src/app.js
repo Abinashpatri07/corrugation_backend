@@ -24,6 +24,9 @@ const purchaseOrderRoutes =
 const billRoutes =
     require('./modules/purchase/bill/bill.routes');
 
+const inventoryRoutes =
+    require('./modules/inventory/inventory.routes');
+
 // =====================================================
 // ERROR HANDLER
 // =====================================================
@@ -117,6 +120,27 @@ app.use(
 app.use(
     '/api/v1/purchase/bills',
     billRoutes
+);
+
+
+// -----------------------------------------------------
+// INVENTORY ROUTES
+// -----------------------------------------------------
+//
+// Base URL:
+//
+// /api/v1/inventory/items
+//
+// Examples:
+//
+// GET  /api/v1/inventory/items
+// POST /api/v1/inventory/items
+// GET  /api/v1/inventory/items/:itemId
+// -----------------------------------------------------
+
+app.use(
+    '/api/v1/inventory',
+    inventoryRoutes
 );
 
 // -----------------------------------------------------
