@@ -96,9 +96,40 @@ async function createInventoryControl(req, res, next) {
 }
 
 
+async function getInventoryControls(req, res, next) {
+    try {
+        const result = await inventoryService.getInventoryControls(req.query);
+        return res.status(200).json({
+            success: true,
+            message: 'Inventory controls fetched successfully',
+            data: result.data,
+            pagination: result.pagination,
+        });
+    } catch (error) {
+        next(error);
+    }
+}
+
+async function getInventoryControlDetails(req, res, next) {
+    try {
+        const adjId = Number(req.params.adjId);
+        const result = await inventoryService.getInventoryControlDetails(adjId);
+        return res.status(200).json({
+            success: true,
+            message: 'Inventory control details fetched successfully',
+            data: result,
+        });
+    } catch (error) {
+        next(error);
+    }
+}
+
+
 module.exports = {
     createInventoryItem,
     getInventoryItems,
     getInventoryItemDetails,
     createInventoryControl,
+    getInventoryControls,
+    getInventoryControlDetails,
 };

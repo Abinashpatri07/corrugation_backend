@@ -76,4 +76,14 @@ router.post(
     controller.createInventoryControl
 );
 
+router.get(
+    '/control',
+    controller.getInventoryControls
+);
+
+router.get(
+    '/control/:adjId',
+    controller.getInventoryControlDetails
+);
+
 module.exports = router;

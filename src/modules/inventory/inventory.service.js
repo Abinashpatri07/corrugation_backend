@@ -288,8 +288,10 @@ async function createInventoryControl(data) {
                 await repository.createInventoryAdjustmentItem(client, adjId, item);
                 
                 // Update master inventory item stock
-                if (item.newQuantity != null) {
-                    await repository.updateInventoryItemStock(client, item.invItemId, item.newQuantity);
+                if (data.status === 'POSTED' && data.adjustment_mode === 'QUANTITY') {
+                    if (item.new_quantity_on_hand != null) {
+                        await repository.updateInventoryItemStock(client, item.inv_item_id, item.new_quantity_on_hand);
+                    }
                 }
             }
         }
@@ -310,9 +312,44 @@ async function createInventoryControl(data) {
 }
 
 
+async function getInventoryControls(params = {}) {
+    const page  = Number(params.page)  || 1;
+    const limit = Number(params.limit) || 10;
+    const offset = (page - 1) * limit;
+    const search    = params.search    || '';
+
+    const result = await repository.getInventoryControls({
+        limit,
+        offset,
+        search,
+    });
+
+    return {
+        data: result.rows,
+        pagination: {
+            page,
+            limit,
+            totalRecords: result.totalRecords,
+            totalPages:   Math.ceil(result.totalRecords / limit),
+        },
+    };
+}
+
+async function getInventoryControlDetails(adjId) {
+    const details = await repository.getInventoryControlDetails(adjId);
+    if (!details) {
+        const error = new Error('Inventory adjustment not found');
+        error.statusCode = 404;
+        throw error;
+    }
+    return details;
+}
+
 module.exports = {
     createInventoryItem,
     getInventoryItems,
     getInventoryItemDetails,
     createInventoryControl,
+    getInventoryControls,
+    getInventoryControlDetails,
 };

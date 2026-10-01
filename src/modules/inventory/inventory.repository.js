@@ -512,28 +512,30 @@ async function getBoxSpec(invItemId) {
 async function createInventoryAdjustment(client, data) {
     const query = `
         INSERT INTO inventory_adjustment (
-            mode_of_adjustment,
+            adjustment_number,
+            adjustment_mode,
             reference_number,
             adjustment_date,
-            account,
+            account_id,
             reason,
             description,
-            front_view,
-            rear_view
+            status
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        RETURNING adj_id AS "adjId";
+        RETURNING adjustment_id AS "adjId";
     `;
 
+    const adjNumber = data.adjustment_number || `ADJ-${Date.now()}`;
+
     const values = [
-        data.modeOfAdjustment,
-        data.referenceNumber || null,
-        data.date ? new Date(data.date) : new Date(),
-        data.account,
+        adjNumber,
+        data.adjustment_mode,
+        data.reference_number || null,
+        data.adjustment_date ? new Date(data.adjustment_date) : new Date(),
+        data.account_id || null,
         data.reason,
         data.description || null,
-        data.frontView || null,
-        data.rearView || null,
+        data.status || 'DRAFT'
     ];
 
     const result = await client.query(query, values);
@@ -543,22 +545,34 @@ async function createInventoryAdjustment(client, data) {
 async function createInventoryAdjustmentItem(client, adjId, item) {
     const query = `
         INSERT INTO inventory_adjustment_item (
-            adj_id,
+            adjustment_id,
             inv_item_id,
+            plant_id,
             quantity_available,
-            new_quantity,
-            quantity_adjusted
+            new_quantity_on_hand,
+            quantity_adjusted,
+            previous_value,
+            new_value,
+            value_adjusted,
+            unit_rate,
+            remarks
         )
-        VALUES ($1, $2, $3, $4, $5)
-        RETURNING adj_item_id AS "adjItemId";
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        RETURNING adjustment_item_id AS "adjItemId";
     `;
 
     const values = [
         adjId,
-        Number(item.invItemId),
-        Number(item.quantityAvailable || 0),
-        Number(item.newQuantity || 0),
-        Number(item.quantityAdjusted || 0),
+        Number(item.inv_item_id),
+        item.plant_id || null,
+        Number(item.quantity_available || 0),
+        Number(item.new_quantity_on_hand || 0),
+        Number(item.quantity_adjusted || 0),
+        Number(item.previous_value || 0),
+        Number(item.new_value || 0),
+        Number(item.value_adjusted || 0),
+        item.unit_rate != null ? Number(item.unit_rate) : null,
+        item.remarks || null
     ];
 
     const result = await client.query(query, values);
@@ -575,6 +589,100 @@ async function updateInventoryItemStock(client, invItemId, newStock) {
 
     const result = await client.query(query, [Number(newStock), Number(invItemId)]);
     return result.rows[0] || null;
+}
+
+async function getInventoryControls({ limit, offset, search }) {
+    const values = [];
+    let whereConditions = `WHERE 1 = 1`;
+
+    if (search) {
+        values.push(`%${search}%`);
+        whereConditions += `
+            AND (
+                a.adjustment_number ILIKE $${values.length}
+                OR a.reference_number ILIKE $${values.length}
+                OR a.reason ILIKE $${values.length}
+            )
+        `;
+    }
+
+    const dataQuery = `
+        SELECT
+            a.adjustment_id AS "id",
+            a.adjustment_number AS "referenceNumber",
+            a.adjustment_mode AS "type",
+            a.reference_number AS "customReference",
+            a.adjustment_date AS "date",
+            a.reason AS "reason",
+            a.description AS "description",
+            a.status AS "status",
+            a.created_at AS "createdAt",
+            a.modified_at AS "modifiedAt"
+        FROM inventory_adjustment a
+        ${whereConditions}
+        ORDER BY a.created_at DESC
+        LIMIT $${values.length + 1} OFFSET $${values.length + 2}
+    `;
+
+    const dataResult = await pool.query(dataQuery, [...values, limit, offset]);
+
+    const countQuery = `
+        SELECT COUNT(*) AS total
+        FROM inventory_adjustment a
+        ${whereConditions}
+    `;
+    const countResult = await pool.query(countQuery, values);
+
+    return {
+        rows: dataResult.rows,
+        totalRecords: Number(countResult.rows[0].total),
+    };
+}
+
+async function getInventoryControlDetails(adjId) {
+    const masterQuery = `
+        SELECT
+            adjustment_id AS "id",
+            adjustment_number AS "referenceNumber",
+            adjustment_mode AS "type",
+            reference_number AS "customReference",
+            adjustment_date AS "date",
+            reason AS "reason",
+            description AS "description",
+            status AS "status",
+            created_at AS "createdAt",
+            modified_at AS "modifiedAt"
+        FROM inventory_adjustment
+        WHERE adjustment_id = $1
+    `;
+    
+    const itemsQuery = `
+        SELECT
+            ai.adjustment_item_id AS "itemId",
+            ai.inv_item_id AS "invItemId",
+            i.item_code AS "itemCode",
+            i.item_name AS "itemName",
+            i.pur_price AS "costPrice",
+            ai.quantity_available AS "quantityAvailable",
+            ai.new_quantity_on_hand AS "newQuantityOnHand",
+            ai.quantity_adjusted AS "quantityAdjusted",
+            ai.previous_value AS "previousValue",
+            ai.new_value AS "newValue",
+            ai.value_adjusted AS "valueAdjusted"
+        FROM inventory_adjustment_item ai
+        JOIN inventory_item i ON ai.inv_item_id = i.inv_item_id
+        WHERE ai.adjustment_id = $1
+    `;
+    
+    const masterResult = await pool.query(masterQuery, [adjId]);
+    if (masterResult.rows.length === 0) return null;
+    
+    const itemsResult = await pool.query(itemsQuery, [adjId]);
+    
+    return {
+        ...masterResult.rows[0],
+        items: itemsResult.rows,
+    };
 }
 
 module.exports = {
@@ -597,4 +705,6 @@ module.exports = {
     createInventoryAdjustment,
     createInventoryAdjustmentItem,
     updateInventoryItemStock,
+    getInventoryControls,
+    getInventoryControlDetails,
 };

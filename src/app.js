@@ -12,20 +12,19 @@ const customerRoutes =
 const vendorRoutes =
     require('./modules/vendor/vendor.routes');
 
-const quoteRoutes = 
+const quoteRoutes =
     require('./modules/quote/quote.routes');
 
-const salesOrderRoutes = 
+const salesOrderRoutes =
     require('./modules/sales_order/sales_order.routes');
 
-const purchaseOrderRoutes =
-    require('./modules/purchase/purchaseOrder/purchase.routes');
+const purchaseOrderRoutes = require(
+    "./modules/purchase/purchaseOrder/purchase.routes"
+);
 
-const billRoutes =
-    require('./modules/purchase/bill/bill.routes');
+const billRoutes = require("./modules/purchase/bill/bill.routes");
 
-const inventoryRoutes =
-    require('./modules/inventory/inventory.routes');
+const inventoryRoutes = require("./modules/inventory/inventory.routes");
 
 // =====================================================
 // ERROR HANDLER
@@ -113,30 +112,14 @@ app.use(
 );
 
 app.use(
-    '/api/v1/purchase-orders',
+    "/api/v1/purchase-orders",
     purchaseOrderRoutes
 );
 
 app.use(
-    '/api/v1/purchase/bills',
+    "/api/v1/purchase/bills",
     billRoutes
 );
-
-
-// -----------------------------------------------------
-// INVENTORY ROUTES
-// -----------------------------------------------------
-//
-// Base URL:
-//
-// /api/v1/inventory/items
-//
-// Examples:
-//
-// GET  /api/v1/inventory/items
-// POST /api/v1/inventory/items
-// GET  /api/v1/inventory/items/:itemId
-// -----------------------------------------------------
 
 app.use(
     '/api/v1/inventory',
