@@ -1,7 +1,6 @@
 const express = require('express');
 const cors = require('cors');
 
-
 // =====================================================
 // ROUTES
 // =====================================================
@@ -26,6 +25,12 @@ const billRoutes = require("./modules/purchase/bill/bill.routes");
 
 const inventoryRoutes = require("./modules/inventory/inventory.routes");
 
+const machineRoutes =
+    require('./modules/machine/machine.routes');
+
+const machineUtilizationRoutes =
+    require('./modules/machine/machineUtilization.routes');
+
 // =====================================================
 // ERROR HANDLER
 // =====================================================
@@ -34,7 +39,6 @@ const errorMiddleware =
     require('./middleware/error.middleware');
 
 const app = express();
-
 
 // =====================================================
 // CORS
@@ -60,7 +64,6 @@ app.use(cors({
 
 }));
 
-
 // =====================================================
 // BODY PARSER
 // =====================================================
@@ -75,25 +78,12 @@ app.use(
     })
 );
 
-
 // =====================================================
 // API ROUTES
 // =====================================================
 
-
 // -----------------------------------------------------
 // CUSTOMER ROUTES
-// -----------------------------------------------------
-//
-// Base URL:
-//
-// /api/v1/customers
-//
-// Examples:
-//
-// GET  /api/v1/customers
-// POST /api/v1/customers
-// GET  /api/v1/customers/:customerId
 // -----------------------------------------------------
 
 app.use(
@@ -121,6 +111,24 @@ app.use(
     billRoutes
 );
 
+// -----------------------------------------------------
+// MACHINE ROUTES
+// -----------------------------------------------------
+
+app.use(
+    '/api/v1/machines',
+    machineRoutes
+);
+
+app.use(
+    '/api/v1/machines',
+    machineUtilizationRoutes
+);
+
+// -----------------------------------------------------
+// INVENTORY ROUTES
+// -----------------------------------------------------
+
 app.use(
     '/api/v1/inventory',
     inventoryRoutes
@@ -129,36 +137,18 @@ app.use(
 // -----------------------------------------------------
 // VENDOR ROUTES
 // -----------------------------------------------------
-//
-// Base URL:
-//
-// /api/v1/vendors
-//
-// Examples:
-//
-// GET  /api/v1/vendors
-// POST /api/v1/vendors
-// GET  /api/v1/vendors/:vendorId
-// -----------------------------------------------------
 
 app.use(
     '/api/v1/vendors',
     vendorRoutes
 );
 
-
 // =====================================================
 // ERROR HANDLER
-// =====================================================
-//
-// This must remain AFTER all API routes so that errors
-// thrown by Customer/Vendor controllers and services
-// are passed to the centralized error middleware.
 // =====================================================
 
 app.use(
     errorMiddleware
 );
-
 
 module.exports = app;
