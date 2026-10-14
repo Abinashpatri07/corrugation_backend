@@ -31,6 +31,10 @@ const machineRoutes =
 const machineUtilizationRoutes =
     require('./modules/machine/machineUtilization.routes');
 
+const manufacturingOrderRoutes = require(
+  "./modules/manufacturingOrder/manufacturingOrder.routes"
+);
+
 // =====================================================
 // ERROR HANDLER
 // =====================================================
@@ -141,6 +145,15 @@ app.use(
 app.use(
     '/api/v1/vendors',
     vendorRoutes
+);
+
+// -----------------------------------------------------
+// MANUFACTURING ORDER ROUTES
+// -----------------------------------------------------
+
+app.use(
+  "/api/v1/manufacturing-orders",
+  manufacturingOrderRoutes
 );
 
 // =====================================================

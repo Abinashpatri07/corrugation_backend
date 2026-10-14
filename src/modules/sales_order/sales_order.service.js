@@ -20,7 +20,7 @@ async function createSalesOrderFromQuote(quoteId) {
             LEFT JOIN customer c ON q.customer_id = c.customer_id
             WHERE q.quote_id = $1
         `, [quoteId]);
-        
+
         if (quoteRes.rows.length === 0) {
             throw new Error(`Quote with ID ${quoteId} not found`);
         }
@@ -29,7 +29,7 @@ async function createSalesOrderFromQuote(quoteId) {
         // 2. Fetch the billing and shipping addresses
         const baRes = await client.query(`SELECT CONCAT_WS(', ', street_1, street_2, city, state, zip_code) as address FROM customer_addresses WHERE customer_id = $1 AND address_type = 'BILLING'`, [quote.customer_id]);
         const saRes = await client.query(`SELECT CONCAT_WS(', ', street_1, street_2, city, state, zip_code) as address FROM customer_addresses WHERE customer_id = $1 AND address_type = 'SHIPPING'`, [quote.customer_id]);
-        
+
         const billingAddress = baRes.rows.length > 0 ? baRes.rows[0].address : null;
         const shippingAddress = saRes.rows.length > 0 ? saRes.rows[0].address : null;
 
@@ -44,10 +44,10 @@ async function createSalesOrderFromQuote(quoteId) {
         items.forEach(item => {
             const weight = parseFloat(item.total_weight) || 0;
             // same pricing logic as frontend: weight * 50
-            const amount = weight * 50; 
+            const amount = weight * 50;
             itemTotal += amount;
             // attach calculated amount back to item for later insert
-            item.calculatedAmount = amount; 
+            item.calculatedAmount = amount;
         });
 
         const gstRate = 18;
@@ -77,21 +77,80 @@ async function createSalesOrderFromQuote(quoteId) {
 
         // 6. Insert Sales Order Items
         for (const item of items) {
+
             await client.query(`
                 INSERT INTO sales_order_item (
-                    sales_order_id, quantity, unit_rate, item_total, 
-                    box_id, ply, length, width, height, 
-                    top_paper_gsm, liner_gsm, flute_gsm, box_spec, 
-                    box_description, box_type, paper_type, box_size
+                    sales_order_id,
+                    quantity,
+                    unit_rate,
+                    item_total,
+                    box_id,
+                    ply,
+                    length,
+                    width,
+                    height,
+                    top_paper_gsm,
+                    liner_gsm,
+                    flute_gsm,
+                    box_spec,
+                    box_description,
+                    box_type,
+                    paper_type,
+                    box_size,
+                    bf,
+                    box_weight,
+                    total_weight,
+                    com_item_code,
+                    com_item_name,
+                    com_req_quantity,
+                    com_item_unit,
+                    board_size,
+                    top_paper_number,
+                    two_ply_number
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+                VALUES (
+                    $1, $2, $3, $4, $5, $6, $7, $8,
+                    $9, $10, $11, $12, $13, $14, $15,
+                    $16, $17, $18, $19, $20, $21, $22,
+                    $23, $24, $25, $26, $27
+                )
             `, [
-                newSalesOrderId, item.quantity, 50, item.calculatedAmount, // using 50 as default unit rate per kg
-                item.box_id, item.ply_type, item.box_length, item.box_width, item.box_height,
-                item.top_gsm, item.liner_gsm, item.flute_gsm, item.box_spec,
-                item.box_description, item.box_type, item.paper_type, item.box_size
+                newSalesOrderId,
+                item.quantity,
+                50,
+                item.calculatedAmount,
+                item.box_id,
+                item.ply_type,
+                item.box_length,
+                item.box_width,
+                item.box_height,
+                item.top_gsm,
+                item.liner_gsm,
+                item.flute_gsm,
+                item.box_spec,
+                item.box_description,
+                item.box_type,
+                item.paper_type,
+                item.box_size,
+                item.bf ?? null,
+
+                // Copy both weights from Quote to Sales Order
+                item.box_weight ?? 0,
+                item.total_weight ?? 0,
+
+                // Existing Material Availability fields
+                item.pro_item_code || null,
+                item.pro_item_name || null,
+                item.pro_req_quantity ?? null,
+                item.pro_item_unit || null,
+                // Board Calculation values from Quote
+                item.board_size || null,
+                item.top_paper_number ?? null,
+                item.two_ply_number ?? null
             ]);
+
         }
+
 
         await client.query('COMMIT');
         return { salesOrderId: newSalesOrderId, salesOrderNumber: soNumber };
@@ -121,7 +180,7 @@ async function getAllSalesOrders() {
             ORDER BY so.created_at DESC
         `;
         const res = await client.query(query);
-        
+
         return res.rows.map(row => ({
             ...row,
             payment: new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2 }).format(row.payment)
@@ -155,20 +214,32 @@ async function getSalesOrderById(id) {
                 soi.paper_type as "paperType",
                 soi.box_size as "boxSize",
                 soi.ply as "plyType",
-                soi.item_total as "itemAmount"
+                soi.bf as "bf",
+                soi.item_total as "itemAmount",
+
+                -- Material Availability
+                soi.com_item_code as "comItemCode",
+                soi.com_item_name as "comItemName",
+                soi.com_req_quantity as "comReqQuantity",
+                soi.com_item_unit as "comItemUnit",
+
+                -- Board Calculation values
+                soi.board_size as "boardSize",
+                soi.top_paper_number as "topPaperNumber",
+                soi.two_ply_number as "twoPlyNumber"
             FROM sales_order so
             LEFT JOIN customer c ON so.customer_id = c.customer_id
             LEFT JOIN sales_order_item soi ON so.sales_order_id = soi.sales_order_id
             WHERE so.sales_order_id = $1
         `;
         const res = await client.query(query, [id]);
-        
+
         if (res.rows.length === 0) {
             return null;
         }
 
         const row = res.rows[0];
-        
+
         return {
             ...row,
             subTotal: new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2 }).format(row.subTotal),
