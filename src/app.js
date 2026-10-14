@@ -48,22 +48,9 @@ const app = express();
 // CORS
 // =====================================================
 
-const allowedOrigins = [
-    'http://localhost:5173',
-    'http://localhost:3000',
-    process.env.FRONTEND_URL,         // Set this in Render env variables
-].filter(Boolean);
-
 app.use(cors({
 
-    origin: function (origin, callback) {
-        // Allow requests with no origin (mobile apps, curl, Postman)
-        if (!origin) return callback(null, true);
-        if (allowedOrigins.includes(origin)) {
-            return callback(null, true);
-        }
-        return callback(new Error('Not allowed by CORS'));
-    },
+    origin: true,   // Allow ALL origins (any Vercel, localhost, etc.)
 
     methods: [
         'GET',
@@ -77,7 +64,9 @@ app.use(cors({
     allowedHeaders: [
         'Content-Type',
         'Authorization'
-    ]
+    ],
+
+    credentials: true
 
 }));
 
